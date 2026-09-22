@@ -1,0 +1,2557 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>문명: 세기의 군주들 (Civilization: Sovereigns)</title>
+    <!-- PeerJS CDN: P2P 실시간 멀티플레이 통신 -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <style>
+        :root {
+            --bg-main: #020617;
+            --panel-bg: rgba(15, 23, 42, 0.96);
+            --gold-accent: #e5b842;
+            --border-line: #334155;
+            --text-main: #f8fafc;
+        }
+        * {
+            box-sizing: border-box; margin: 0; padding: 0;
+            user-select: none; -webkit-user-select: none;
+            -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+        }
+        body, html {
+            width: 100%; height: 100%; height: -webkit-fill-available;
+            overflow: hidden; background-color: var(--bg-main);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: var(--text-main); touch-action: none; overscroll-behavior: none;
+        }
+
+        /* ================= 로비 화면 ================= */
+        #lobby-view {
+            position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column;
+            background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
+            overflow-y: auto; -webkit-overflow-scrolling: touch;
+            padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+            color: #fff;
+        }
+        .lobby-header { text-align: center; margin-bottom: 14px; }
+        .lobby-header h1 { font-size: 28px; color: var(--gold-accent); text-shadow: 0 0 15px rgba(229, 184, 66, 0.5); letter-spacing: 1.5px; }
+        .lobby-header p { color: #94a3b8; font-size: 13px; margin-top: 4px; }
+
+        .lobby-mode-tabs { display: flex; justify-content: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+        .tab-btn {
+            background: #1e293b; color: #94a3b8; border: 1px solid var(--border-line);
+            padding: 12px 20px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 14px;
+            min-height: 44px; display: flex; align-items: center; justify-content: center; transition: 0.2s;
+        }
+        .tab-btn.active { background: var(--gold-accent); color: #0f172a; border-color: #fef08a; box-shadow: 0 0 14px rgba(229, 184, 66, 0.4); }
+
+        .lobby-grid { display: grid; grid-template-columns: 1fr 340px; gap: 18px; max-width: 1240px; margin: 0 auto; width: 100%; }
+        @media (max-width: 860px) { .lobby-grid { grid-template-columns: 1fr; } }
+
+        .leader-selection-box { background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border-line); border-radius: 12px; padding: 16px; }
+        .leader-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; max-height: 440px; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-right: 4px; }
+        
+        .leader-card {
+            background: #1e293b; border: 2px solid #334155; border-radius: 10px; padding: 12px;
+            cursor: pointer; transition: all 0.15s; display: flex; flex-direction: column; gap: 4px; min-height: 100px;
+        }
+        .leader-card:active { transform: scale(0.98); }
+        .leader-card.selected { border-color: var(--gold-accent); background: rgba(229, 184, 66, 0.14); box-shadow: 0 0 14px rgba(229, 184, 66, 0.35); }
+        .leader-avatar { font-size: 30px; text-align: center; }
+        .leader-name { font-weight: bold; font-size: 14px; color: var(--gold-accent); text-align: center; }
+        .leader-civ { font-size: 11px; color: #cbd5e1; text-align: center; }
+        .leader-trait-desc { font-size: 11px; color: #94a3b8; line-height: 1.35; margin-top: 2px; }
+
+        .settings-panel { background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border-line); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+        .setting-group label { display: block; font-size: 13px; color: #cbd5e1; margin-bottom: 6px; font-weight: 600; }
+        .setting-group select, .setting-group input {
+            width: 100%; min-height: 44px; padding: 8px 12px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 14px;
+        }
+
+        .mp-room-box { background: #0f172a; border: 1px dashed var(--gold-accent); border-radius: 8px; padding: 14px; text-align: center; }
+        .room-code-badge { font-family: monospace; font-size: 24px; color: var(--gold-accent); letter-spacing: 4px; font-weight: bold; margin: 6px 0; }
+
+        .btn-large {
+            background: linear-gradient(180deg, #e5b842, #b48512); color: #020617; border: 1px solid #fef08a;
+            min-height: 48px; border-radius: 10px; font-size: 16px; font-weight: bold; cursor: pointer;
+            box-shadow: 0 4px 16px rgba(229, 184, 66, 0.4); transition: 0.15s; text-align: center;
+            display: flex; align-items: center; justify-content: center; width: 100%;
+        }
+        .btn-large:active { transform: scale(0.98); }
+        .btn-large:disabled { opacity: 0.4; cursor: not-allowed; filter: grayscale(1); }
+
+        /* ================= 인게임 HUD ================= */
+        #game-view { width: 100%; height: 100%; display: none; position: relative; }
+        #game-ui { position: absolute; inset: 0; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; z-index: 20; }
+        
+        .ui-panel {
+            pointer-events: auto; background: var(--panel-bg); border: 1px solid var(--border-line);
+            backdrop-filter: blur(12px); border-radius: 12px; padding: 8px 14px; margin: 8px;
+            box-shadow: 0 8px 26px rgba(0,0,0,0.85);
+        }
+        
+        #top-bar {
+            display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;
+            margin-top: max(8px, env(safe-area-inset-top));
+            margin-left: max(8px, env(safe-area-inset-left));
+            margin-right: max(8px, env(safe-area-inset-right));
+        }
+        .res-container { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+        .res-item {
+            display: flex; align-items: center; gap: 4px; background: rgba(0, 0, 0, 0.55);
+            padding: 5px 9px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08);
+            font-size: 12px; font-weight: 600; min-height: 32px;
+        }
+        .res-item.strategic { border-color: rgba(229, 184, 66, 0.5); background: rgba(45, 33, 10, 0.6); }
+
+        .btn-group { display: flex; gap: 6px; align-items: center; }
+        .btn {
+            background: linear-gradient(180deg, #d4af37, #997513); color: #080c14; border: 1px solid #ffe89e;
+            padding: 7px 13px; border-radius: 7px; font-weight: 700; cursor: pointer; min-height: 38px;
+            font-size: 13px; display: flex; align-items: center; justify-content: center; pointer-events: auto;
+        }
+        .btn:active { transform: scale(0.96); }
+        .btn:disabled { background: #232936; color: #64748b; border-color: #334155; cursor: not-allowed; transform: none; }
+        .btn-sci { background: linear-gradient(180deg, #2563eb, #173fa5); color: #fff; border-color: #60a5fa; }
+        .btn-diplo { background: linear-gradient(180deg, #8b5cf6, #5b21b6); color: #fff; border-color: #c4b5fd; }
+        .btn-turn { background: linear-gradient(180deg, #16a34a, #116830); color: #fff; border-color: #86efac; font-size: 14px; padding: 7px 16px; }
+
+        #turn-status-badge {
+            background: #1e293b; border: 1px solid #475569; padding: 6px 14px;
+            border-radius: 8px; font-size: 13px; font-weight: bold; display: flex; align-items: center; gap: 6px;
+        }
+        #turn-status-badge.my-turn { border-color: #22c55e; background: rgba(34, 197, 94, 0.22); color: #4ade80; }
+        #turn-status-badge.wait-turn { border-color: #f59e0b; background: rgba(245, 158, 11, 0.22); color: #fbbf24; }
+
+        /* 하단 유닛 액션 바 */
+        #unit-action-bar {
+            position: absolute; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
+            display: none; align-items: center; gap: 8px; padding: 9px 16px;
+            background: rgba(15, 23, 42, 0.96); border: 2px solid var(--gold-accent);
+            border-radius: 12px; box-shadow: 0 10px 35px rgba(0,0,0,0.9); pointer-events: auto; z-index: 30;
+        }
+        .action-btn {
+            background: #1e293b; color: #fff; border: 1px solid #334155; padding: 8px 14px;
+            border-radius: 7px; font-weight: bold; cursor: pointer; font-size: 13px; min-height: 40px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .action-btn:active { transform: scale(0.96); }
+        .action-btn.active { background: #2563eb; border-color: #93c5fd; }
+        .action-btn.settle-btn { background: #059669; border-color: #34d399; }
+        .action-btn.settle-btn:disabled { opacity: 0.35; cursor: not-allowed; background: #1e293b; border-color: #334155; }
+        .action-btn.capture-btn { background: #991b1b; border-color: #ef4444; }
+
+        /* 미니맵 */
+        #minimap-wrapper {
+            position: absolute;
+            right: max(10px, env(safe-area-inset-right));
+            bottom: max(10px, env(safe-area-inset-bottom));
+            width: 190px; height: 120px;
+            background: rgba(11, 16, 26, 0.94); border: 2px solid var(--gold-accent);
+            border-radius: 10px; overflow: hidden; pointer-events: auto; cursor: crosshair; z-index: 25;
+        }
+        #minimapCanvas { width: 100%; height: 100%; display: block; }
+        #minimap-label { position: absolute; top: 4px; left: 6px; font-size: 9px; font-weight: bold; color: #fbbf24; pointer-events: none; }
+
+        #canvas-container { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+        #gameCanvas { width: 100%; height: 100%; display: block; }
+
+        /* 모달 팝업 공통 */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.82); display: flex;
+            justify-content: center; align-items: center; z-index: 200; pointer-events: auto;
+            opacity: 0; visibility: hidden; transition: 0.18s; padding: 16px;
+        }
+        .modal-overlay.active { opacity: 1; visibility: visible; }
+        .modal-card {
+            background: #0f172a; border: 2px solid var(--gold-accent); border-radius: 14px;
+            width: 100%; max-width: 520px; padding: 22px; box-shadow: 0 0 40px rgba(0,0,0,0.9);
+            position: relative; max-height: 85vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+        }
+        .modal-close {
+            position: absolute; top: 10px; right: 10px; background: transparent; border: none;
+            color: #94a3b8; font-size: 26px; cursor: pointer; min-width: 44px; min-height: 44px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .build-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+        .card-opt {
+            background: #1e293b; border: 1px solid #334155; padding: 12px; border-radius: 8px;
+            color: #fff; cursor: pointer; text-align: left; min-height: 52px;
+        }
+        .card-opt:active:not(:disabled) { transform: scale(0.98); }
+        .card-opt:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .badge { display: inline-block; font-size: 10px; padding: 2px 5px; border-radius: 4px; font-weight: bold; margin-bottom: 4px; }
+        .badge-req { background: rgba(239, 68, 68, 0.25); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
+
+        /* 기술 트리 탭 스타일 */
+        .tech-tabs { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 10px; }
+        .tech-tab {
+            background: #1e293b; border: 1px solid #334155; color: #94a3b8; padding: 6px 12px;
+            border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; white-space: nowrap;
+        }
+        .tech-tab.active { background: #38bdf8; color: #0f172a; border-color: #bae6fd; }
+
+        .tech-node {
+            background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px;
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+        }
+        .tech-node.done { border-color: #10b981; background: rgba(16, 185, 129, 0.12); }
+    </style>
+</head>
+<body>
+
+    <!-- ================= 1. 로비 화면 ================= -->
+    <div id="lobby-view">
+        <div class="lobby-header">
+            <h1>문명: 세기의 군주들</h1>
+            <p>대륙을 정복하고, 동맹을 맺으며, 우주를 개척하여 위대한 제국을 건설하세요.</p>
+        </div>
+
+        <div class="lobby-mode-tabs">
+            <button id="tab-btn-single" class="tab-btn active" onclick="switchLobbyMode('SINGLE')">👤 싱글플레이</button>
+            <button id="tab-btn-host" class="tab-btn" onclick="switchLobbyMode('HOST')">📡 방 만들기 (호스트)</button>
+            <button id="tab-btn-join" class="tab-btn" onclick="switchLobbyMode('JOIN')">🔗 방 참가하기 (게스트)</button>
+        </div>
+
+        <div class="lobby-grid">
+            <div class="leader-selection-box">
+                <h3 style="color:var(--gold-accent); margin-bottom: 10px;">👑 나의 지도자 선택 (12인)</h3>
+                <div id="leader-cards-container" class="leader-cards"></div>
+            </div>
+
+            <div class="settings-panel">
+                <h3 style="color:var(--gold-accent);">⚙️ 게임 설정</h3>
+                
+                <div style="background: rgba(30, 41, 59, 0.5); border: 1px solid #475569; border-radius: 8px; padding: 10px; display: flex; align-items: center; justify-content: space-between;">
+                    <div>
+                        <div style="font-size: 13px; font-weight: bold; color: #38bdf8;">📖 튜토리얼 모드</div>
+                        <div style="font-size: 11px; color: #94a3b8;">게임 내 핵심 행동 시 상세 가이드를 제공합니다.</div>
+                    </div>
+                    <input type="checkbox" id="tutorial-toggle" style="width: 22px; height: 22px; accent-color: var(--gold-accent); cursor: pointer;" checked>
+                </div>
+
+                <div id="mp-host-box" class="mp-room-box" style="display:none;">
+                    <div style="font-size:12px; color:#94a3b8;">다른 기기에 아래 5자리 방 코드를 알려주세요</div>
+                    <div id="host-room-code" class="room-code-badge">생성 중...</div>
+                    <div id="host-peer-status" style="font-size:12px; color:#38bdf8;">상대방 접속 대기 중...</div>
+                </div>
+
+                <div id="mp-join-box" class="mp-room-box" style="display:none;">
+                    <label style="font-size:12px; color:#94a3b8; display:block; margin-bottom:4px;">참가할 5자리 방 코드 입력</label>
+                    <input type="text" id="join-room-input" placeholder="예: 74921" maxlength="6" style="text-align:center; font-size:18px; font-weight:bold; letter-spacing:3px;">
+                    <button class="btn" style="width:100%; margin-top:8px; min-height:44px;" onclick="connectToHost()">🔗 방 접속하기</button>
+                    <div id="join-peer-status" style="font-size:12px; color:#38bdf8; margin-top:6px;"></div>
+                </div>
+
+                <div class="setting-group" id="map-size-group">
+                    <label>지도 크기</label>
+                    <select id="map-size-select" onchange="onMapSizeChange()">
+                        <option value="SMALL">소형 (36x24 헥스 / 2~4개국 - 초스피드)</option>
+                        <option value="MEDIUM" selected>중형 (48x30 헥스 / 3~6개국 - 추천)</option>
+                        <option value="LARGE">대형 (64x38 헥스 / 5~12개국 - 대륙전쟁)</option>
+                    </select>
+                </div>
+
+                <div class="setting-group" id="civ-count-group">
+                    <label>참여 문명 수: <span id="civ-count-label" style="color:var(--gold-accent); font-weight:bold;">4개국</span></label>
+                    <input type="range" id="civ-count-slider" min="3" max="6" value="4" oninput="onCivSliderChange(this.value)">
+                </div>
+
+                <button id="start-game-btn" class="btn-large" onclick="startGame()">🚀 대륙 창건 및 게임 시작</button>
+
+                <hr style="border:none; height:1px; background:#334155; margin: 4px 0;">
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                    <button class="btn" style="background:#1e293b; color:#fff; min-height:44px;" onclick="loadGameFromStorage()">📂 저장 불러오기</button>
+                    <button class="btn" style="background:#1e293b; color:#fff; min-height:44px;" onclick="document.getElementById('save-file-input').click()">📄 파일 열기</button>
+                </div>
+                <input type="file" id="save-file-input" accept=".json" style="display:none;" onchange="importSaveFile(event)">
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= 2. 인게임 뷰 ================= -->
+    <div id="game-view">
+        <div id="game-ui">
+            <div id="top-bar" class="ui-panel">
+                <div class="res-container">
+                    <div id="turn-status-badge" class="my-turn">
+                        <span id="turn-status-icon">🟢</span>
+                        <span id="turn-status-text">내 턴</span>
+                    </div>
+                    <div class="res-item">⏳ 턴 <span id="turn-txt" style="color:#fff;">1</span></div>
+                    <div class="res-item">🪙 <span id="gold-txt" style="color:#facc15;">100</span> (+<span id="gold-inc">0</span>)</div>
+                    <div class="res-item">🪵 <span id="mat-txt" style="color:#fbbf24;">90</span> (+<span id="mat-inc">0</span>)</div>
+                    <div class="res-item">🔬 <span id="sci-txt" style="color:#38bdf8;">0</span> (+<span id="sci-inc">0</span>)</div>
+                    <div class="res-item strategic">🐎 <span id="res-horses">0</span></div>
+                    <div class="res-item strategic">⛓️ <span id="res-iron">0</span></div>
+                    <div class="res-item strategic">🧨 <span id="res-niter">0</span></div>
+                    <div class="res-item">🔨 <span id="build-cnt">0</span>/<span id="max-build-cnt">3</span></div>
+                </div>
+                <div class="btn-group">
+                    <button class="btn" style="background:#334155; color:#fff;" onclick="openTurnOrderModal()">🎲 순서표</button>
+                    <button class="btn" style="background:#334155; color:#fff;" onclick="saveGameToStorage()">💾 저장</button>
+                    <button class="btn btn-sci" onclick="openTechModal()">🔬 연구</button>
+                    <button class="btn btn-diplo" onclick="openDiploModal()">📜 외교</button>
+                    <button class="btn" style="background:#475569; color:#fff;" onclick="returnToLobby()">🏠 로비</button>
+                    <button id="end-turn-btn" class="btn btn-turn" onclick="onEndTurnClick()">⏩ 턴 종료</button>
+                </div>
+            </div>
+
+            <!-- 유닛 액션 바 -->
+            <div id="unit-action-bar">
+                <div id="unit-info-display" style="font-size:13px; font-weight:bold; border-right:1px solid #334155; padding-right:10px;"></div>
+                <button id="btn-mode-move" class="action-btn" onclick="setUnitMode('MOVE')">👟 이동</button>
+                <button id="btn-mode-attack" class="action-btn" onclick="setUnitMode('ATTACK')">⚔️ 공격</button>
+                <button id="btn-mode-settle" class="action-btn settle-btn" style="display:none;" onclick="executeSettle()">🏰 도시 개척</button>
+                <button id="btn-mode-capture" class="action-btn capture-btn" onclick="executeCapture()">🚩 점령</button>
+                <button class="action-btn" onclick="deselectUnit()">✕ 해제</button>
+            </div>
+
+            <!-- 미니맵 -->
+            <div id="minimap-wrapper">
+                <span id="minimap-label">🗺️ MINIMAP</span>
+                <canvas id="minimapCanvas"></canvas>
+            </div>
+
+            <div style="padding: 6px 14px; font-size: 11px; color: #94a3b8; pointer-events: none;">
+                👁️ <b>전장의 안개</b>: 도시를 창건하고 시설을 건설해 자원을 확보하고, 외교와 과학·지배 승리를 향해 나아가세요!
+            </div>
+        </div>
+
+        <div id="canvas-container">
+            <canvas id="gameCanvas"></canvas>
+        </div>
+    </div>
+
+    <!-- ================= 3. 모달 팝업들 ================= -->
+    <div id="turn-order-modal" class="modal-overlay">
+        <div class="modal-card" style="max-width: 460px; text-align: center;">
+            <h2 style="color:var(--gold-accent);">🎲 턴 순서 추첨 결과 발표</h2>
+            <p style="color:#94a3b8; font-size:13px; margin-top:4px;">게임 시작과 함께 턴 순서가 무작위로 결정되었습니다.</p>
+            <div id="turn-order-container" class="turn-order-list"></div>
+            <button class="btn-large" onclick="closeTurnOrderAnnouncement()">전쟁터로 진입하기</button>
+        </div>
+    </div>
+
+    <div id="tile-modal" class="modal-overlay">
+        <div class="modal-card">
+            <button class="modal-close" onclick="closeModal('tile-modal')">✕</button>
+            <h2 id="tile-title" style="color:var(--gold-accent); font-size:18px;">타일 정보</h2>
+            <p id="tile-desc" style="color:#94a3b8; font-size:13px; margin:4px 0 10px 0;"></p>
+            <hr style="border:none; height:1px; background:var(--border-line); margin-bottom:12px;">
+
+            <div id="city-prod-sec" style="display:none; background:rgba(30,41,59,0.5); padding:12px; border-radius:8px; border:1px solid #475569; margin-bottom:14px;">
+                <h4 style="color:#38bdf8; font-size:14px; margin-bottom:6px;">🏗️ 도시 생산 프로젝트</h4>
+                <div id="city-prod-content"></div>
+            </div>
+
+            <div id="tile-build-sec">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h4 style="color:#d4af37; font-size:14px;">🔨 시설 건설</h4>
+                    <span style="font-size:11px; color:#94a3b8;">1타일 1시설 제약</span>
+                </div>
+                <div id="build-list" class="build-grid"></div>
+            </div>
+
+            <div id="tile-unit-sec" style="margin-top:12px; border-top:1px dashed #334155; padding-top:10px; display:none;">
+                <h4 style="color:#22c55e; font-size:14px; margin-bottom:6px;">⚔️ 병력 훈련</h4>
+                <div id="unit-recruit-list" class="build-grid"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="tech-modal" class="modal-overlay">
+        <div class="modal-card" style="max-width: 580px;">
+            <button class="modal-close" onclick="closeModal('tech-modal')">✕</button>
+            <h2 style="color:#38bdf8; font-size:18px;">🔬 시대별 과학 연구</h2>
+            <div id="tech-tabs-container" class="tech-tabs" style="margin-top: 10px;"></div>
+            <div id="tech-tree-container" style="margin-top:10px; max-height: 50vh; overflow-y: auto;"></div>
+        </div>
+    </div>
+
+    <div id="diplo-modal" class="modal-overlay">
+        <div class="modal-card" style="max-width: 560px;">
+            <button class="modal-close" onclick="closeModal('diplo-modal')">✕</button>
+            <h2 style="color:#c4b5fd; font-size:18px;">📜 외교 관계 및 국가 목록</h2>
+            <p style="font-size:12px; color:#94a3b8; margin-top:4px;">조우한 국가와 외교 행동을 하거나 관계를 관리하세요.</p>
+            <div id="diplo-list" style="display:flex; flex-direction:column; gap:10px; margin-top:12px; max-height: 55vh; overflow-y: auto;"></div>
+        </div>
+    </div>
+
+    <!-- 튜토리얼 / 알림 팝업 모달 -->
+    <div id="tutorial-modal" class="modal-overlay">
+        <div class="modal-card" style="max-width: 440px; text-align: center; border-color: #38bdf8;">
+            <div id="tutorial-icon" style="font-size: 36px; margin-bottom: 6px;">💡</div>
+            <h3 id="tutorial-title" style="color: #38bdf8; font-size: 18px; margin-bottom: 8px;">튜토리얼 가이드</h3>
+            <p id="tutorial-desc" style="color: #cbd5e1; font-size: 13px; line-height: 1.5; margin-bottom: 16px;"></p>
+            <button class="btn-large" style="background: linear-gradient(180deg, #38bdf8, #0284c7); color: #020617; border-color: #bae6fd;" onclick="closeTutorialModal()">확인 및 계속하기</button>
+        </div>
+    </div>
+
+    <script>
+        // =========================================================================
+        //  1. 지도자 12인 정의
+        // =========================================================================
+        const LEADERS = [
+            { id: 'sejong', name: '세종대왕', civ: '조선', avatar: '👑', color: '#2563eb', desc: '집현전: 과학 생산량 +25%, 문자 기술 보유 시작', startTech: 'WRITING' },
+            { id: 'caesar', name: '카이사르', civ: '로마', avatar: '🏛️', color: '#dc2626', desc: '로마 군단: 근접 유닛 공격력 +20%, 타일 점령 시 35 금화 약탈' },
+            { id: 'cleopatra', name: '클레오파트라', civ: '이집트', avatar: '🏺', color: '#eab308', desc: '나일의 선물: 농장 자재 +2, 턴당 금화 +3' },
+            { id: 'genghis', name: '칭기즈 칸', civ: '몽골', avatar: '🐎', color: '#06b6d4', desc: '초원의 기마군: 기병 이동력 +1, 기병 비용 25% 감소' },
+            { id: 'elizabeth', name: '엘리자베스 1세', civ: '영국', avatar: '⛵', color: '#10b981', desc: '해가 지지 않는 나라: 어선/양식장 골드 +50%, 조선술 보유 시작', startTech: 'NAVIGATION' },
+            { id: 'pachacuti', name: '파차쿠티', civ: '잉카', avatar: '⛰️', color: '#f97316', desc: '안데스 개척자: 산맥 이동력 1만 소모(면제) 및 산맥 금화 +3' },
+            { id: 'cyrus', name: '키루스 2세', civ: '페르시아', avatar: '🦁', color: '#a855f7', desc: '불멸의 군주: 모든 유닛 시야 +1 증가' },
+            { id: 'alexander', name: '알렉산드로스', civ: '마케도니아', avatar: '⚔️', color: '#f43f5e', desc: '정복왕: 매 턴 아군 체력 +20 회복, 공격력 +15%' },
+            { id: 'qin', name: '진시황', civ: '진나라', avatar: '🏯', color: '#d97706', desc: '만리장성: 턴당 건설 제한 4회, 성벽 건설 비용 반값' },
+            { id: 'saladin', name: '살라딘', civ: '아라비아', avatar: '🌙', color: '#14b8a6', desc: '다마스쿠스 강철: 광산 자재 생산량 +2 및 채광 보유', startTech: 'MINING' },
+            { id: 'nobunaga', name: '오다 노부나가', civ: '일본', avatar: '👺', color: '#e11d48', desc: '무사도: 근접 방어 시 받는 반격 피해 25% 경감' },
+            { id: 'montezuma', name: '몬테수마', civ: '아즈텍', avatar: '🦅', color: '#84cc16', desc: '태양의 전사: 보유한 전략 자원 1종마다 공격력 +2' }
+        ];
+
+        let selectedLeaderIndex = 0;
+        let lobbyMode = 'SINGLE';
+        let isTutorialEnabled = true;
+
+        // 튜토리얼 체크 깃발들
+        let tutorialDone = {
+            start: false,
+            tech: false,
+            diplo: false,
+            war: false,
+            settle: false,
+            attack: false,
+            space: false
+        };
+
+        // =========================================================================
+        //  2. 맵 프리셋 및 유닛 정의
+        // =========================================================================
+        const MAP_PRESETS = {
+            SMALL: { name: '소형', cols: 36, rows: 24, minCiv: 2, maxCiv: 4, defCiv: 3, hexR: 26 },
+            MEDIUM: { name: '중형', cols: 48, rows: 30, minCiv: 3, maxCiv: 6, defCiv: 4, hexR: 22 },
+            LARGE: { name: '대형', cols: 64, rows: 38, minCiv: 5, maxCiv: 12, defCiv: 7, hexR: 19 }
+        };
+        let currentMapPreset = 'MEDIUM';
+
+        let MAP_COLS = 48;
+        let MAP_ROWS = 30;
+        let HEX_R = 22;
+        let HEX_W = Math.sqrt(3) * HEX_R;
+        let HEX_VERT_SPACING = 1.5 * HEX_R;
+
+        const UNIT_TYPES = {
+            SETTLER: { name: '개척자', category: 'CIVILIAN', costMat: 70, buildTurns: 5, reqTech: null, reqRes: null, attack: 0, range: 0, minRange: 0, maxMoves: 2, icon: '⛺' },
+            WARRIOR: { name: '원시 전사', category: 'MELEE', costMat: 30, reqTech: null, reqRes: null, attack: 16, range: 1, minRange: 1, maxMoves: 3, icon: '🗡️' },
+            SWORDSMAN: { name: '철기 검사', category: 'MELEE', costMat: 70, reqTech: 'IRON_WORKING', reqRes: 'IRON', attack: 30, range: 1, minRange: 1, maxMoves: 3, icon: '⚔️' },
+            HEAVY_SWORDSMAN: { name: '중갑병', category: 'MELEE', costMat: 95, reqTech: 'PLATE_ARMOR', reqRes: 'IRON', attack: 42, range: 1, minRange: 1, maxMoves: 3, icon: '🛡️' },
+            
+            // 기병 테크 (생산 2턴 소요)
+            HORSEMAN: { name: '경기병', category: 'CAVALRY', costMat: 80, buildTurns: 2, reqTech: 'HORSEBACK', reqRes: 'HORSES', attack: 28, range: 1, minRange: 1, maxMoves: 5, icon: '🐎' },
+            HEAVY_CAVALRY: { name: '중갑기사', category: 'CAVALRY', costMat: 110, buildTurns: 2, reqTech: 'CHIVALRY', reqRes: 'BOTH_IRON_HORSE', attack: 48, range: 1, minRange: 1, maxMoves: 5, icon: '🏇' },
+            EARLY_TANK: { name: '초기전차', category: 'CAVALRY', costMat: 160, buildTurns: 2, reqTech: 'TRACKS', reqRes: 'IRON', attack: 72, range: 1, minRange: 1, maxMoves: 5, icon: '🚜' },
+            MODERN_TANK: { name: '현대 전차', category: 'CAVALRY', costMat: 220, buildTurns: 2, reqTech: 'COMBUSTION', reqRes: 'NITER', attack: 96, range: 1, minRange: 1, maxMoves: 6, icon: '🛸' },
+
+            ARCHER: { name: '장궁 궁수', category: 'RANGED', costMat: 45, reqTech: 'BRONZE_WORKING', reqRes: null, attack: 14, range: 2, minRange: 2, maxMoves: 2, icon: '🏹' },
+            CROSSBOWMAN: { name: '석궁병', category: 'RANGED', costMat: 75, reqTech: 'TRIGGER', reqRes: null, attack: 26, range: 2, minRange: 2, maxMoves: 2, icon: '🎯' },
+            FIELD_GUN: { name: '전장포', category: 'RANGED', costMat: 105, reqTech: 'GUNPOWDER', reqRes: 'NITER', attack: 40, range: 3, minRange: 2, maxMoves: 2, icon: '💣' },
+            MORTAR: { name: '박격포', category: 'RANGED', costMat: 145, reqTech: 'RIFLED', reqRes: 'NITER', attack: 68, range: 3, minRange: 2, maxMoves: 2, icon: '🚀' },
+
+            MUSKETEER: { name: '머스킷병', category: 'RANGED', costMat: 110, reqTech: 'GUNPOWDER', reqRes: 'NITER', attack: 44, range: 3, minRange: 2, maxMoves: 2, icon: '🧨' },
+            INFANTRY: { name: '근대 전열보병', category: 'RANGED', costMat: 150, reqTech: 'MILITARY_TACTICS', reqRes: 'NITER', attack: 62, range: 3, minRange: 2, maxMoves: 2, icon: '🎖️' },
+            MODERN_INFANTRY: { name: '현대 보병', category: 'RANGED', costMat: 190, reqTech: 'RIFLED', reqRes: 'NITER', attack: 85, range: 3, minRange: 2, maxMoves: 2, icon: '🛡️' }
+        };
+
+        const TERRAINS = {
+            OCEAN: { id: 'OCEAN', name: '해양', color: '#0b1d3a', miniColor: '#0a192f', gold: 1, mat: 0, sci: 1, moveCost: 1 },
+            PLAINS: { id: 'PLAINS', name: '초원', color: '#3d6d45', miniColor: '#487e4f', gold: 1, mat: 2, sci: 0, moveCost: 1 },
+            FOREST: { id: 'FOREST', name: '울창한 숲', color: '#1a472a', miniColor: '#1e5431', gold: 1, mat: 4, sci: 1, moveCost: 1 },
+            DESERT: { id: 'DESERT', name: '사막', color: '#cda851', miniColor: '#d8b45a', gold: 1, mat: 0, sci: 0, moveCost: 1 },
+            MOUNTAIN: { id: 'MOUNTAIN', name: '고산 지대', color: '#5a626c', miniColor: '#8490a0', gold: 0, mat: 5, sci: 2, moveCost: 3 }
+        };
+
+        const STRATEGIC_RESOURCES = {
+            HORSES: { name: '야생마', icon: '🐎' },
+            IRON: { name: '철광석', icon: '⛓️' },
+            NITER: { name: '질산칼륨', icon: '🧨' }
+        };
+
+        const BUILDINGS = {
+            FARM: { name: '농장', costMat: 30, reqTech: 'AGRI', allowedTerrains: ['PLAINS'], incGold: 1, incMat: 3, incSci: 0, icon: '🌾' },
+            FISHING_BOAT: { name: '어선', costMat: 35, reqTech: 'NAVIGATION', allowedTerrains: ['OCEAN'], incGold: 4, incMat: 0, incSci: 1, icon: '⛵' },
+            AQUACULTURE: { name: '양식장', costMat: 85, reqTech: 'AQUACULTURE_TECH', allowedTerrains: ['OCEAN'], incGold: 9, incMat: 0, incSci: 3, icon: '🐟' },
+            PASTURE: { name: '목장', costMat: 45, reqTech: 'ANIMAL', allowedTerrains: ['PLAINS'], incGold: 3, incMat: 2, incSci: 0, icon: '🛖', specialRes: 'HORSES' },
+            MINE: { name: '철광산', costMat: 55, reqTech: 'MINING', allowedTerrains: ['PLAINS', 'MOUNTAIN'], incGold: 1, incMat: 7, incSci: 1, icon: '⛏️', specialRes: 'IRON' },
+            NITER_MINE: { name: '질산 제련소', costMat: 70, reqTech: 'GUNPOWDER', allowedTerrains: ['PLAINS', 'FOREST', 'DESERT'], incGold: 2, incMat: 6, incSci: 3, icon: '🏭', specialRes: 'NITER' },
+            LIBRARY: { name: '도서관', costMat: 50, reqTech: 'WRITING', allowedTerrains: ['PLAINS', 'FOREST'], incGold: 0, incMat: 0, incSci: 6, icon: '📚' },
+            BARRACKS: { name: '병영', costMat: 60, reqTech: 'BRONZE_WORKING', allowedTerrains: ['PLAINS'], incGold: 0, incMat: 3, incSci: 0, icon: '🎪' },
+            WALLS: { name: '방어 성벽', costMat: 80, reqTech: 'MASONRY', allowedTerrains: null, incGold: 0, incMat: 0, incSci: 0, icon: '🛡️', capitalOnly: true }
+        };
+
+        // 시대별 기술 트리와 간지나는 명언(Flavor Text)
+        const TECHS = [
+            // 고대 시대
+            { era: '고대 시대', id: 'AGRI', name: '농경', cost: 25, pre: [], desc: '초원에 [농장] 건설 가능', flavor: '"만물의 근원은 흙이며, 빵은 문명의 심장이다."' },
+            { era: '고대 시대', id: 'ANIMAL', name: '가축화', cost: 35, pre: ['AGRI'], desc: '야생마에 [목장] 건설 가능', flavor: '"야생의 힘이 인간의 어깨 위에 얹어질 때, 역사는 달리기 시작한다."' },
+            { era: '고대 시대', id: 'MINING', name: '채광', cost: 30, pre: [], desc: '철광맥 탐색 및 광산 채굴', flavor: '"땅 속 깊은 곳의 어둠 속에서, 제국의 뼈대가 빛난다."' },
+            { era: '고대 시대', id: 'POTTERY', name: '도자기', cost: 30, pre: [], desc: '식량 저장 능력 향상', flavor: '"진흙을 빚어 담은 그릇에 시간과 역사가 고인다."' },
+            { era: '고대 시대', id: 'BRONZE_WORKING', name: '청동기', cost: 55, pre: ['MINING'], desc: '[병영] 건설 및 궁수 해금', flavor: '"불과 구리가 만나 태어난 푸른 검날이 정복의 서막을 연다."' },
+            { era: '고대 시대', id: 'MASONRY', name: '석공술', cost: 60, pre: ['POTTERY'], desc: '수도 [방어 성벽] 건설 가능', flavor: '"바위와 바위를 쌓아 올린 장벽은 시간의 폭풍조차 막아낸다."' },
+            { era: '고대 시대', id: 'WRITING', name: '문자', cost: 50, pre: ['POTTERY'], desc: '[도서관] 건설 가능', flavor: '"말은 바람에 흩어지나, 문자는 대리석에 새겨진다."' },
+
+            // 고전 시대
+            { era: '고전 시대', id: 'NAVIGATION', name: '조선술', cost: 50, pre: ['POTTERY'], desc: '해양 [어선] 및 바다 항해 가능', flavor: '"지평선 너머의 미지의 바다는 용기 있는 자의 영토이다."' },
+            { era: '고전 시대', id: 'IRON_WORKING', name: '철제 기술', cost: 90, pre: ['BRONZE_WORKING'], desc: '철에 [철광산] 및 [검사] 해금', flavor: '"철을 지배하는 자가 곧 세계를 지배하리라."' },
+            { era: '고전 시대', id: 'HORSEBACK', name: '승마 기술', cost: 80, pre: ['ANIMAL'], desc: '말 확보 시 [경기병] 훈련 가능', flavor: '"인간과 야수가 한 몸이 되어 대지를 울린다."' },
+            { era: '고전 시대', id: 'TRIGGER', name: '방아쇠', cost: 95, pre: ['BRONZE_WORKING'], desc: '[석궁병] 훈련 가능', flavor: '"장전된 긴장감 끝에 날아드는 화살은 철갑마저 꿰뚫는다."' },
+
+            // 중세 시대
+            { era: '중세 시대', id: 'CHIVALRY', name: '기사도', cost: 130, pre: ['HORSEBACK', 'IRON_WORKING'], desc: '철과 말 소모 [중갑기사] 해금', flavor: '"명예와 충성, 그리고 돌진하는 기사의 랜스가 봉건의 영광을 세운다."' },
+            { era: '중세 시대', id: 'PLATE_ARMOR', name: '판금 갑옷', cost: 140, pre: ['IRON_WORKING'], desc: '[중갑병] 훈련 가능', flavor: '"투박한 철판이 삼엄한 방어벽을 두를 때, 무적의 보병이 탄생한다."' },
+
+            // 르네상스 시대
+            { era: '르네상스 시대', id: 'GUNPOWDER', name: '화약', cost: 190, pre: ['IRON_WORKING'], desc: '질산 타일에 [제련소], [머스킷병] & [전장포] 해금', flavor: '"세상의 모든 성벽을 무너뜨린 검은 가루의 폭발음."'},
+            { era: '르네상스 시대', id: 'AQUACULTURE_TECH', name: '양식', cost: 220, pre: ['NAVIGATION'], desc: '바다에 고수익 [양식장] 해금', flavor: '"바다의 풍요를 통제하는 자, 대양의 제왕이 되리라."' },
+
+            // 근대 시대
+            { era: '근대 시대', id: 'MILITARY_TACTICS', name: '군사 교리', cost: 260, pre: ['GUNPOWDER', 'CHIVALRY'], desc: '[근대 전열보병] 해금', flavor: '"규율과 대열이야말로 현대 군대의 가장 강력한 무기이다."' },
+
+            // 현대 시대
+            { era: '현대 시대', id: 'TRACKS', name: '무한궤도', cost: 300, pre: ['MILITARY_TACTICS'], desc: '철갑을 두른 강철의 발명, [초기전차] 해금', flavor: '"진흙과 참호도, 험준한 산맥도 이 강철의 궤도 앞에서 멈출 수 없다."' },
+            { era: '현대 시대', id: 'COMBUSTION', name: '내연기관', cost: 350, pre: ['TRACKS'], desc: '엔진의 시대 개막, [현대 전차] 해금', flavor: '"석유의 심장이 뛰기 시작하자 전장의 속도는 상상을 초월하게 되었다."' },
+            { era: '현대 시대', id: 'RIFLED', name: '강선', cost: 320, pre: ['MILITARY_TACTICS'], desc: '강선의 도입, [현대 보병] 및 [박격포] 해금', flavor: '"회전하는 탄환은 정확함이라는 이름의 죽음을 선사한다."' },
+            { era: '현대 시대', id: 'SPACE_PROGRAM', name: '우주 개척 프로그램', cost: 450, pre: ['COMBUSTION', 'RIFLED'], desc: '우주로 향하는 길, [우주 식민지 프로그램] 해금', flavor: '"인류의 발걸음은 이제 지구를 넘어 끝없는 별을 향한다."' }
+        ];
+
+        // 런타임 변수
+        let canvas, ctx, minimapCanvas, mctx;
+        let scale = 1.0;
+        let cameraX = 0, cameraY = 0;
+        let dpr = 1.0;
+        let needsRender = true;
+
+        let turn = 1;
+        let gold = 100, materials = 90, science = 0;
+        let buildCount = 0;
+        let isCapitalFounded = false;
+        let playerLeader = null;
+        let playerCivName = "문명";
+        let researchedTechs = ['AGRI'];
+        let strategicRes = { HORSES: 0, IRON: 0, NITER: 0 };
+
+        let map = [];
+        let units = [];
+        let aiNations = [];
+        let selectedTile = null;
+        let selectedUnit = null;
+        let currentUnitMode = 'MOVE';
+        let fogOfWar = [];
+
+        // 멀티플레이 변수
+        let peer = null;
+        let p2pConn = null;
+        let isMultiplayer = false;
+        let isHost = true;
+        let myPlayerId = 'player_host';
+        let guestLeaderIndex = 1;
+
+        let turnOrder = [];
+        let currentTurnIdx = 0;
+        let activeCivId = null;
+
+        // 외교 관계 데이터: 각 국가별 타 국가와의 우호도 및 상태
+        // 예: diploRelations['player_host']['ai_sejong'] = { relation: 50, status: 'NEUTRAL', warTurns: 0, denounceTurns: 0, alliance: false }
+        let diploRelations = {};
+
+        function requestRender() { needsRender = true; }
+
+        // =========================================================================
+        //  3. 튜토리얼 및 알림 팝업 함수
+        // =========================================================================
+        function triggerTutorial(key, title, desc) {
+            if (!isTutorialEnabled) return;
+            if (tutorialDone[key]) return;
+            tutorialDone[key] = true;
+
+            document.getElementById('tutorial-title').innerText = title;
+            document.getElementById('tutorial-desc').innerText = desc;
+            document.getElementById('tutorial-modal').classList.add('active');
+        }
+
+        function closeTutorialModal() {
+            document.getElementById('tutorial-modal').classList.remove('active');
+        }
+
+        // =========================================================================
+        //  4. 턴당 자원 수확량 실시간 산출 함수
+        // =========================================================================
+        function calculateCivIncome(civId) {
+            let leader = null;
+            if (civId === myPlayerId) {
+                leader = playerLeader;
+            } else if (civId === 'player_guest') {
+                leader = LEADERS[guestLeaderIndex];
+            } else {
+                const ai = aiNations.find(a => a.id === civId);
+                if (ai) leader = ai.leader;
+            }
+
+            let gPlus = 0, mPlus = 0, sPlus = 0;
+            let horses = 0, iron = 0, niter = 0;
+
+            if (leader && leader.id === 'cleopatra') gPlus += 3;
+
+            for (let r = 0; r < MAP_ROWS; r++) {
+                for (let c = 0; c < MAP_COLS; c++) {
+                    let t = map[r][c];
+                    if (t.owner === civId) {
+                        gPlus += t.terrain.gold;
+                        mPlus += t.terrain.mat;
+                        sPlus += t.terrain.sci;
+
+                        if (leader && leader.id === 'pachacuti' && t.terrain.id === 'MOUNTAIN') gPlus += 3;
+
+                        if (t.building === 'CAPITAL' || t.building === 'CITY') {
+                            gPlus += 2; mPlus += 3; sPlus += 1;
+                        } else if (t.building && BUILDINGS[t.building]) {
+                            let b = BUILDINGS[t.building];
+                            let bGold = b.incGold;
+                            if (leader && leader.id === 'elizabeth' && (t.building === 'FISHING_BOAT' || t.building === 'AQUACULTURE')) {
+                                bGold = Math.floor(bGold * 1.5);
+                            }
+                            gPlus += bGold;
+                            let matInc = b.incMat + (leader && leader.id === 'cleopatra' && t.building === 'FARM' ? 2 : 0);
+                            if (leader && leader.id === 'saladin' && t.building === 'MINE') matInc += 2;
+                            mPlus += matInc;
+                            sPlus += b.incSci;
+
+                            if (b.specialRes === 'HORSES') horses++;
+                            if (b.specialRes === 'IRON') iron++;
+                            if (b.specialRes === 'NITER') niter++;
+                        }
+                    }
+                }
+            }
+
+            if (leader && leader.id === 'sejong') sPlus = Math.floor(sPlus * 1.25);
+
+            return { gold: gPlus, mat: mPlus, sci: sPlus, horses, iron, niter };
+        }
+
+        // =========================================================================
+        //  5. 로비 UI
+        // =========================================================================
+        function initLobbyUI() {
+            const container = document.getElementById('leader-cards-container');
+            container.innerHTML = '';
+            LEADERS.forEach((l, idx) => {
+                const card = document.createElement('div');
+                card.className = `leader-card ${idx === 0 ? 'selected' : ''}`;
+                card.onclick = () => selectLeader(idx);
+                card.innerHTML = `
+                    <div class="leader-avatar">${l.avatar}</div>
+                    <div class="leader-name">${l.name}</div>
+                    <div class="leader-civ" style="color:${l.color}; font-weight:bold;">${l.civ}</div>
+                    <div class="leader-trait-desc">${l.desc}</div>
+                `;
+                container.appendChild(card);
+            });
+            onMapSizeChange();
+        }
+
+        function selectLeader(idx) {
+            selectedLeaderIndex = idx;
+            document.querySelectorAll('.leader-card').forEach((c, i) => c.classList.toggle('selected', i === idx));
+        }
+
+        function switchLobbyMode(mode) {
+            lobbyMode = mode;
+            document.getElementById('tab-btn-single').className = `tab-btn ${mode === 'SINGLE' ? 'active' : ''}`;
+            document.getElementById('tab-btn-host').className = `tab-btn ${mode === 'HOST' ? 'active' : ''}`;
+            document.getElementById('tab-btn-join').className = `tab-btn ${mode === 'JOIN' ? 'active' : ''}`;
+
+            const hostBox = document.getElementById('mp-host-box');
+            const joinBox = document.getElementById('mp-join-box');
+            const startBtn = document.getElementById('start-game-btn');
+            const mapGroup = document.getElementById('map-size-group');
+            const civGroup = document.getElementById('civ-count-group');
+
+            if (mode === 'SINGLE') {
+                isMultiplayer = false; isHost = true; myPlayerId = 'player_host';
+                hostBox.style.display = 'none'; joinBox.style.display = 'none';
+                mapGroup.style.display = 'block'; civGroup.style.display = 'block';
+                startBtn.style.display = 'flex'; startBtn.disabled = false;
+                startBtn.innerText = '🚀 싱글플레이 시작';
+            } else if (mode === 'HOST') {
+                isMultiplayer = true; isHost = true; myPlayerId = 'player_host';
+                hostBox.style.display = 'block'; joinBox.style.display = 'none';
+                mapGroup.style.display = 'block'; civGroup.style.display = 'block';
+                startBtn.style.display = 'flex'; startBtn.disabled = true;
+                startBtn.innerText = '🚀 멀티플레이 시작';
+                initPeerAsHost();
+            } else if (mode === 'JOIN') {
+                isMultiplayer = true; isHost = false; myPlayerId = 'player_guest';
+                hostBox.style.display = 'none'; joinBox.style.display = 'block';
+                mapGroup.style.display = 'none'; civGroup.style.display = 'none';
+                startBtn.style.display = 'none';
+            }
+        }
+
+        function onMapSizeChange() {
+            currentMapPreset = document.getElementById('map-size-select').value;
+            const preset = MAP_PRESETS[currentMapPreset];
+            const slider = document.getElementById('civ-count-slider');
+            slider.min = preset.minCiv; slider.max = preset.maxCiv; slider.value = preset.defCiv;
+            onCivSliderChange(slider.value);
+        }
+
+        function onCivSliderChange(val) {
+            document.getElementById('civ-count-label').innerText = `${val}개국`;
+        }
+
+        // =========================================================================
+        //  6. 멀티플레이 네트워킹
+        // =========================================================================
+        function initPeerAsHost() {
+            if (peer) peer.destroy();
+            const roomCode = Math.floor(10000 + Math.random() * 90000).toString();
+            peer = new Peer(`civ6-room-${roomCode}`);
+            peer.on('open', () => {
+                document.getElementById('host-room-code').innerText = roomCode;
+                document.getElementById('host-peer-status').innerText = '상대방 접속 대기 중...';
+            });
+            peer.on('connection', conn => {
+                p2pConn = conn;
+                setupConnectionHandlers(conn);
+                document.getElementById('host-peer-status').innerHTML = '🟢 <b>상대방 접속 완료!</b>';
+                document.getElementById('start-game-btn').disabled = false;
+            });
+            peer.on('error', () => initPeerAsHost());
+        }
+
+        function connectToHost() {
+            const code = document.getElementById('join-room-input').value.trim();
+            if (code.length < 5) return alert('5자리 코드를 입력해주세요.');
+            if (peer) peer.destroy();
+
+            peer = new Peer();
+            document.getElementById('join-peer-status').innerText = '방 접속 시도 중...';
+            peer.on('open', () => {
+                p2pConn = peer.connect(`civ6-room-${code}`);
+                setupConnectionHandlers(p2pConn);
+                p2pConn.on('open', () => {
+                    document.getElementById('join-peer-status').innerHTML = '🟢 <b>연결 성공!</b> 호스트 대기 중.';
+                    sendNetMsg({ type: 'GUEST_JOINED', leaderIndex: selectedLeaderIndex });
+                });
+            });
+            peer.on('error', () => {
+                document.getElementById('join-peer-status').innerText = '❌ 접속 실패: 코드를 확인해주세요.';
+            });
+        }
+
+        function setupConnectionHandlers(conn) {
+            conn.on('data', data => handleNetworkMessage(data));
+            conn.on('close', () => alert('⚠️ 상대방과의 연결이 끊어졌습니다.'));
+        }
+
+        function sendNetMsg(msg) {
+            if (p2pConn && p2pConn.open) p2pConn.send(msg);
+        }
+
+        function handleNetworkMessage(msg) {
+            switch (msg.type) {
+                case 'GUEST_JOINED': guestLeaderIndex = msg.leaderIndex; break;
+                case 'GAME_START_SYNC': applyGameStartSync(msg); break;
+                case 'ACTION_MOVE_UNIT': syncMoveUnit(msg.unitId, msg.r, msg.c, msg.moves); break;
+                case 'ACTION_ATTACK': syncAttack(msg.attackerId, msg.defenderId, msg.dmg, msg.counterDmg); break;
+                case 'ACTION_SETTLE': syncSettle(msg.unitId, msg.r, msg.c, msg.cityName, msg.isCapital, msg.owner); break;
+                case 'ACTION_CAPTURE': syncCapture(msg.r, msg.c, msg.owner); break;
+                case 'ACTION_BUILD': syncBuild(msg.r, msg.c, msg.buildingKey, msg.owner); break;
+                case 'ACTION_START_PROD': syncStartProd(msg.r, msg.c); break;
+                case 'TURN_SYNC':
+                    currentTurnIdx = msg.currentTurnIdx;
+                    activeCivId = msg.activeCivId;
+                    turn = msg.turn;
+                    updateTurnBadge();
+                    refreshUI();
+                    requestRender();
+                    break;
+            }
+            requestRender();
+        }
+
+        // =========================================================================
+        //  7. 게임 시작 및 초기화
+        // =========================================================================
+        function startGame() {
+            isTutorialEnabled = document.getElementById('tutorial-toggle').checked;
+            const preset = MAP_PRESETS[currentMapPreset];
+            MAP_COLS = preset.cols; MAP_ROWS = preset.rows;
+            HEX_R = preset.hexR; HEX_W = Math.sqrt(3) * HEX_R; HEX_VERT_SPACING = 1.5 * HEX_R;
+
+            playerLeader = LEADERS[selectedLeaderIndex];
+            playerCivName = playerLeader.civ;
+            const totalCivCount = parseInt(document.getElementById('civ-count-slider').value);
+
+            const excluded = [selectedLeaderIndex];
+            if (isMultiplayer) excluded.push(guestLeaderIndex);
+            const availableAI = LEADERS.filter((_, idx) => !excluded.includes(idx)).sort(() => Math.random() - 0.5);
+
+            aiNations = [];
+            const aiCount = totalCivCount - (isMultiplayer ? 2 : 1);
+            for (let i = 0; i < aiCount; i++) {
+                const aiL = availableAI[i];
+                let stratPref = 'DOMINATION';
+                let rVal = Math.random();
+                if (rVal < 0.4) stratPref = 'SCIENCE';
+                else if (rVal < 0.7) stratPref = 'DIPLOMACY';
+
+                aiNations.push({
+                    id: `ai_${aiL.id}`, leader: aiL, name: `${aiL.name} (${aiL.civ})`,
+                    color: aiL.color, strategy: stratPref, capital: null,
+                    gold: 100, mat: 90, sci: 0,
+                    strategic: { HORSES: 0, IRON: 0, NITER: 0 },
+                    researchedTechs: ['AGRI'],
+                    spaceProgramTurns: 0,
+                    spaceCompleted: false
+                });
+            }
+
+            let allCivIds = ['player_host'];
+            if (isMultiplayer) allCivIds.push('player_guest');
+            aiNations.forEach(ai => allCivIds.push(ai.id));
+
+            turnOrder = randomizeTurnOrder(allCivIds);
+            currentTurnIdx = 0;
+            activeCivId = turnOrder[0];
+
+            generateProceduralMap();
+            initDiploRelations(allCivIds);
+
+            units = [];
+            spawnStarterUnitsForCiv('player_host');
+            if (isMultiplayer) spawnStarterUnitsForCiv('player_guest');
+            spawnAIStarters();
+
+            finishGameInit();
+
+            if (isMultiplayer) {
+                sendNetMsg({
+                    type: 'GAME_START_SYNC',
+                    MAP_COLS, MAP_ROWS, HEX_R, currentMapPreset,
+                    mapData: exportMinimalMap(),
+                    unitsData: units,
+                    turnOrder, activeCivId,
+                    hostLeaderIndex: selectedLeaderIndex,
+                    guestLeaderIndex: guestLeaderIndex,
+                    aiNationsData: aiNations
+                });
+            }
+
+            triggerTutorial('start', '제국의 여정 시작', '축하합니다! 문명의 군주가 되셨습니다. 먼저 개척자를 이동시켜 도시를 개척하고, 연구를 시작하여 제국을 발전시키세요.');
+        }
+
+        function exportMinimalMap() {
+            return map.map(row => row.map(t => ({
+                r: t.r, c: t.c, terrainId: t.terrain.id, strategic: t.strategic,
+                owner: t.owner, building: t.building, cityName: t.cityName, isCapital: t.isCapital
+            })));
+        }
+
+        function applyGameStartSync(msg) {
+            MAP_COLS = msg.MAP_COLS; MAP_ROWS = msg.MAP_ROWS;
+            HEX_R = msg.HEX_R; HEX_W = Math.sqrt(3) * HEX_R; HEX_VERT_SPACING = 1.5 * HEX_R;
+            currentMapPreset = msg.currentMapPreset;
+
+            selectedLeaderIndex = msg.guestLeaderIndex;
+            playerLeader = LEADERS[selectedLeaderIndex];
+            playerCivName = playerLeader.civ;
+            guestLeaderIndex = msg.guestLeaderIndex;
+
+            turnOrder = msg.turnOrder;
+            activeCivId = msg.activeCivId;
+            currentTurnIdx = turnOrder.indexOf(activeCivId);
+            aiNations = msg.aiNationsData;
+
+            map = [];
+            fogOfWar = [];
+            for (let r = 0; r < MAP_ROWS; r++) {
+                map[r] = [];
+                fogOfWar[r] = new Uint8Array(MAP_COLS);
+                for (let c = 0; c < MAP_COLS; c++) {
+                    const raw = msg.mapData[r][c];
+                    map[r][c] = {
+                        r: raw.r, c: raw.c,
+                        terrain: TERRAINS[raw.terrainId],
+                        strategic: raw.strategic,
+                        owner: raw.owner,
+                        building: raw.building,
+                        cityName: raw.cityName,
+                        isCapital: raw.isCapital,
+                        production: null
+                    };
+                }
+            }
+
+            units = msg.unitsData;
+            finishGameInit();
+        }
+
+        function finishGameInit() {
+            researchedTechs = ['AGRI'];
+            if (playerLeader.startTech && !researchedTechs.includes(playerLeader.startTech)) {
+                researchedTechs.push(playerLeader.startTech);
+            }
+
+            turn = 1;
+            gold = 100 + (playerLeader.id === 'cleopatra' ? 20 : 0);
+            materials = 90; science = 0; buildCount = 0;
+            isCapitalFounded = false;
+            strategicRes = { HORSES: 0, IRON: 0, NITER: 0 };
+            selectedTile = null; selectedUnit = null;
+
+            updateFogOfWar();
+
+            document.getElementById('lobby-view').style.display = 'none';
+            document.getElementById('game-view').style.display = 'block';
+
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+            minimapCanvas = document.getElementById('minimapCanvas');
+            mctx = minimapCanvas.getContext('2d');
+            minimapCanvas.width = MAP_COLS;
+            minimapCanvas.height = MAP_ROWS;
+
+            resizeCanvas();
+            focusCameraOnMyPlayer();
+            updateTurnBadge();
+            refreshUI();
+
+            requestRender();
+            requestAnimationFrame(renderLoop);
+        }
+
+        function randomizeTurnOrder(civIds) {
+            return [...civIds].sort(() => Math.random() - 0.5);
+        }
+
+        function initDiploRelations(civIds) {
+            diploRelations = {};
+            civIds.forEach(id1 => {
+                diploRelations[id1] = {};
+                civIds.forEach(id2 => {
+                    if (id1 !== id2) {
+                        diploRelations[id1][id2] = {
+                            relation: 50, // 0~100 (중립 50)
+                            status: 'NEUTRAL', // NEUTRAL, FRIEND, ALLY, WAR, DENOUNCED
+                            warTurns: 0,
+                            denounceTurns: 0
+                        };
+                    }
+                });
+            });
+        }
+
+        function spawnStarterUnitsForCiv(civId) {
+            let cand = [];
+            for (let r = 4; r < MAP_ROWS - 4; r++) {
+                for (let c = 4; c < MAP_COLS - 4; c++) {
+                    if (map[r][c].terrain.id === 'PLAINS' && !map[r][c].owner) cand.push(map[r][c]);
+                }
+            }
+            let spawnTile = cand[Math.floor(Math.random() * cand.length)] || map[Math.floor(MAP_ROWS/2)][Math.floor(MAP_COLS/2)];
+
+            units.push({
+                id: `settler_${civId}`, owner: civId, type: 'SETTLER',
+                r: spawnTile.r, c: spawnTile.c, hp: 100, maxHp: 100, moves: UNIT_TYPES.SETTLER.maxMoves
+            });
+
+            let nb = getHexNeighbors(spawnTile.r, spawnTile.c).filter(t => t.terrain.id !== 'OCEAN' && t.terrain.id !== 'MOUNTAIN' && !t.owner);
+            let wTile = nb.length > 0 ? nb[0] : spawnTile;
+            units.push({
+                id: `warrior_${civId}`, owner: civId, type: 'WARRIOR',
+                r: wTile.r, c: wTile.c, hp: 100, maxHp: 100, moves: UNIT_TYPES.WARRIOR.maxMoves
+            });
+        }
+
+        function spawnAIStarters() {
+            let landTiles = [];
+            for (let r = 4; r < MAP_ROWS - 4; r++) {
+                for (let c = 4; c < MAP_COLS - 4; c++) {
+                    if (map[r][c].terrain.id === 'PLAINS' && !map[r][c].owner) landTiles.push(map[r][c]);
+                }
+            }
+
+            aiNations.forEach((ai, idx) => {
+                let chosen = null;
+                for (let attempt = 0; attempt < 80; attempt++) {
+                    let cand = landTiles[Math.floor(Math.random() * landTiles.length)];
+                    if (!cand) continue;
+                    let tooClose = units.some(u => getHexDistance(cand.r, cand.c, u.r, u.c) < 10) ||
+                                   aiNations.some(other => other.capital && getHexDistance(cand.r, cand.c, other.capital.r, other.capital.c) < 10);
+                    if (!tooClose) { chosen = cand; break; }
+                }
+                if (!chosen && landTiles.length > 0) chosen = landTiles[(idx * 12) % landTiles.length];
+
+                if (chosen) {
+                    ai.capital = { r: chosen.r, c: chosen.c };
+                    chosen.building = 'CAPITAL';
+                    chosen.cityName = `${ai.leader.civ} 수도`;
+                    chosen.isCapital = true;
+                    claimHexArea(chosen.r, chosen.c, ai.id);
+                    units.push({ id: `ai_w_${idx}`, owner: ai.id, type: 'WARRIOR', r: chosen.r, c: chosen.c, hp: 100, maxHp: 100, moves: 3 });
+                }
+            });
+        }
+
+        // =========================================================================
+        //  8. 턴 엔진 및 AI / 승리 조건 체크
+        // =========================================================================
+        function onEndTurnClick() {
+            if (!isMyTurn()) return alert('당신의 차례가 아닙니다!');
+            deselectUnit();
+            nextTurnInOrder();
+        }
+
+        function isMyTurn() {
+            return activeCivId === myPlayerId;
+        }
+
+        function updateTurnBadge() {
+            const badge = document.getElementById('turn-status-badge');
+            const icon = document.getElementById('turn-status-icon');
+            const text = document.getElementById('turn-status-text');
+            if (isMyTurn()) {
+                badge.className = 'my-turn';
+                icon.innerText = '🟢';
+                text.innerText = '내 턴';
+            } else {
+                badge.className = 'wait-turn';
+                icon.innerText = '⏳';
+                text.innerText = `${getCivInfo(activeCivId).name} 턴 중`;
+            }
+        }
+
+        function getCivInfo(civId) {
+            if (civId === 'player_host') return { name: playerCivName, avatar: playerLeader.avatar, color: playerLeader.color, civ: playerLeader.civ };
+            if (civId === 'player_guest') {
+                const gl = LEADERS[guestLeaderIndex];
+                return { name: gl.civ, avatar: gl.avatar, color: gl.color, civ: gl.civ };
+            }
+            const ai = aiNations.find(a => a.id === civId);
+            if (ai) return { name: ai.name, avatar: ai.leader.avatar, color: ai.color, civ: ai.leader.civ };
+            return { name: '중립', avatar: '🏳️', color: '#64748b', civ: '중립' };
+        }
+
+        function startTurnForCiv(civId) {
+            activeCivId = civId;
+            updateTurnBadge();
+            refreshUI();
+            requestRender();
+
+            if (isMultiplayer) {
+                sendNetMsg({
+                    type: 'TURN_SYNC',
+                    currentTurnIdx, activeCivId, turn
+                });
+            }
+
+            if (civId === myPlayerId) {
+                focusCameraOnMyPlayer();
+            } else if (civId.startsWith('ai_')) {
+                if (isHost) {
+                    setTimeout(() => runSingleAITurn(civId), 300);
+                }
+            }
+        }
+
+        function nextTurnInOrder() {
+            let nextIdx = (currentTurnIdx + 1) % turnOrder.length;
+            if (nextIdx === 0) {
+                turn++;
+                processGlobalTurnCycle();
+            }
+            currentTurnIdx = nextIdx;
+            startTurnForCiv(turnOrder[currentTurnIdx]);
+        }
+
+        function runSingleAITurn(aiId) {
+            try {
+                const ai = aiNations.find(a => a.id === aiId);
+                if (ai) {
+                    // 과학 연구 자동 진행
+                    if (ai.researchedTechs.length < TECHS.length) {
+                        let available = TECHS.filter(t => !ai.researchedTechs.includes(t.id) && t.pre.every(p => ai.researchedTechs.includes(p)));
+                        if (available.length > 0) {
+                            let chosenTech = available[Math.floor(Math.random() * available.length)];
+                            if (ai.sci >= chosenTech.cost) {
+                                ai.sci -= chosenTech.cost;
+                                ai.researchedTechs.push(chosenTech.id);
+                                if (chosenTech.id === 'SPACE_PROGRAM') ai.spaceProgramTurns = 1;
+                            }
+                        }
+                    }
+
+                    // 과학 승리 우주 프로그램 진행 중인 경우
+                    if (ai.researchedTechs.includes('SPACE_PROGRAM') && !ai.spaceCompleted) {
+                        ai.spaceProgramTurns++;
+                        if (ai.spaceProgramTurns >= 15) {
+                            ai.spaceCompleted = true;
+                            alert(`🚀 AI [${ai.name}]이(가) 과학 승리(우주 식민지 프로그램 완수)를 달성했습니다! 게임 종료.`);
+                            return;
+                        }
+                    }
+
+                    // 시설 건설 및 유닛 생산
+                    let aiBuilds = 0;
+                    for (let r = 0; r < MAP_ROWS && aiBuilds < 3; r++) {
+                        for (let c = 0; c < MAP_COLS && aiBuilds < 3; c++) {
+                            let t = map[r][c];
+                            if (t.owner === ai.id && !t.building) {
+                                if (t.terrain.id === 'PLAINS' && ai.mat >= BUILDINGS.FARM.costMat) {
+                                    t.building = 'FARM'; ai.mat -= BUILDINGS.FARM.costMat; aiBuilds++;
+                                } else if (t.strategic === 'IRON' && ai.mat >= BUILDINGS.MINE.costMat) {
+                                    t.building = 'MINE'; ai.mat -= BUILDINGS.MINE.costMat; aiBuilds++;
+                                }
+                            }
+                        }
+                    }
+
+                    if (ai.capital && ai.mat >= 80) {
+                        ai.mat -= 80;
+                        units.push({ id: `ai_u_${Date.now()}_${Math.random()}`, owner: ai.id, type: 'WARRIOR', r: ai.capital.r, c: ai.capital.c, hp: 100, maxHp: 100, moves: 3, buildTurnsLeft: 0 });
+                    }
+                }
+            } catch (err) {
+                console.error("AI Turn Error:", err);
+            }
+            nextTurnInOrder();
+        }
+
+        function processGlobalTurnCycle() {
+            buildCount = 0;
+
+            for (let r = 0; r < MAP_ROWS; r++) {
+                for (let c = 0; c < MAP_COLS; c++) {
+                    let tile = map[r][c];
+                    // 도시 생산 (개척자)
+                    if (tile.production) {
+                        tile.production.turnsLeft--;
+                        if (tile.production.turnsLeft <= 0) {
+                            units.push({
+                                id: `settler_${Date.now()}_${Math.random()}`,
+                                owner: tile.owner,
+                                type: tile.production.type,
+                                r: tile.r, c: tile.c,
+                                hp: 100, maxHp: 100,
+                                moves: UNIT_TYPES[tile.production.type].maxMoves
+                            });
+                            if (tile.owner === myPlayerId) {
+                                alert(`🎉 [${tile.cityName || '도시'}]에서 개척자가 양성되었습니다!`);
+                            }
+                            tile.production = null;
+                        }
+                    }
+                }
+            }
+
+            // 기병 등 2턴 생산 유닛들의 남은 생산 턴 감소 처리
+            units.forEach(u => {
+                if (u.buildTurnsLeft && u.buildTurnsLeft > 0) {
+                    u.buildTurnsLeft--;
+                }
+            });
+
+            // 플레이어 자원 수급 정산
+            const myIncome = calculateCivIncome(myPlayerId);
+            gold += myIncome.gold;
+            materials += myIncome.mat;
+            science += myIncome.sci;
+            strategicRes = { HORSES: myIncome.horses, IRON: myIncome.iron, NITER: myIncome.niter };
+
+            // AI 국가 자원 수급 정산
+            aiNations.forEach(ai => {
+                const aiIncome = calculateCivIncome(ai.id);
+                ai.gold += aiIncome.gold;
+                ai.mat += aiIncome.mat;
+                ai.sci += aiIncome.sci;
+                ai.strategic = { HORSES: aiIncome.horses, IRON: aiIncome.iron, NITER: aiIncome.niter };
+            });
+
+            if (playerLeader.id === 'alexander') {
+                units.filter(u => u.owner === myPlayerId).forEach(u => u.hp = Math.min(u.maxHp, u.hp + 20));
+            }
+
+            // 국경 확장
+            if (turn % 2 === 0) {
+                expandHexBorder(myPlayerId);
+                aiNations.forEach(ai => expandHexBorder(ai.id));
+                if (isMultiplayer) expandHexBorder(myPlayerId === 'player_host' ? 'player_guest' : 'player_host');
+            }
+
+            units.forEach(u => {
+                // 생산 중인 유닛(buildTurnsLeft > 0)은 이동 불가
+                if (u.buildTurnsLeft && u.buildTurnsLeft > 0) {
+                    u.moves = 0;
+                    return;
+                }
+                let uData = UNIT_TYPES[u.type];
+                if (uData) {
+                    let baseMoves = uData.maxMoves;
+                    if (u.owner === myPlayerId && playerLeader.id === 'genghis' && uData.category === 'CAVALRY') baseMoves++;
+                    u.moves = baseMoves;
+                }
+            });
+
+            // 외교 전쟁 턴 카운트 갱신
+            Object.keys(diploRelations).forEach(id1 => {
+                Object.keys(diploRelations[id1]).forEach(id2 => {
+                    let rel = diploRelations[id1][id2];
+                    if (rel.status === 'WAR') rel.warTurns++;
+                    if (rel.status === 'DENOUNCED') {
+                        rel.denounceTurns++;
+                        if (rel.denounceTurns >= 5) {
+                            // 5턴 경과 시 공식 전쟁 가능 상태 유지
+                        }
+                    }
+                });
+            });
+
+            updateFogOfWar();
+            refreshUI();
+            checkVictoryConditions();
+            requestRender();
+        }
+
+        // 승리 조건 검사
+        function checkVictoryConditions() {
+            // 1. 지배 승리: 모든 다른 국가의 수도를 점령했는지
+            let allOtherCivIds = [];
+            aiNations.forEach(ai => allOtherCivIds.push(ai.id));
+            if (isMultiplayer) allOtherCivIds.push(myPlayerId === 'player_host' ? 'player_guest' : 'player_host');
+
+            let domWin = true;
+            for (let otherId of allOtherCivIds) {
+                let hasCap = false;
+                for (let r = 0; r < MAP_ROWS; r++) {
+                    for (let c = 0; c < MAP_COLS; c++) {
+                        let t = map[r][c];
+                        if (t.isCapital && t.owner === otherId) hasCap = true;
+                    }
+                }
+                if (hasCap) { domWin = false; break; }
+            }
+            if (domWin && allOtherCivIds.length > 0) {
+                alert('🏆 [지배 승리] 모든 적대 문명의 수도를 정복하여 대륙의 유일한 군주가 되셨습니다!');
+                return;
+            }
+
+            // 2. 외교 승리: 멸망하지 않은 모든 국가와 동맹을 맺었는지
+            let aliveCivs = allOtherCivIds.filter(id => {
+                // 수도가 남아있거나 유닛이 남아있는지 확인
+                return units.some(u => u.owner === id);
+            });
+            if (aliveCivs.length > 0) {
+                let allAllied = aliveCivs.every(id => diploRelations[myPlayerId]?.[id]?.status === 'ALLY');
+                if (allAllied) {
+                    alert('🤝 [외교 승리] 살아남은 모든 국가들과 동맹을 결성하여 평화의 통일을 이뤄냈습니다!');
+                    return;
+                }
+            }
+        }
+
+        // =========================================================================
+        //  9. 유닛 인터랙션 및 전쟁/외교 규칙
+        // =========================================================================
+        function handleHexClick(r, c) {
+            if (!isMyTurn()) return alert('상대방의 턴이 진행 중입니다. 차례를 기다려주세요.');
+
+            let tile = map[r][c];
+            let unitOnTile = units.find(u => u.r === r && u.c === c && (fogOfWar[r][c] === 2 || u.owner === myPlayerId));
+
+            if (selectedUnit && selectedUnit.owner === myPlayerId) {
+                if (selectedUnit.buildTurnsLeft && selectedUnit.buildTurnsLeft > 0) {
+                    return alert('훈련 중인 유닛은 이번 턴에 행동할 수 없습니다.');
+                }
+
+                if (currentUnitMode === 'ATTACK') {
+                    if (unitOnTile && unitOnTile.owner !== myPlayerId) {
+                        let targets = getAttackableHexTargets(selectedUnit);
+                        if (targets.includes(unitOnTile)) {
+                            checkAndPerformAttack(selectedUnit, unitOnTile);
+                            return;
+                        } else {
+                            alert('사거리 밖이거나 조준할 수 없습니다.');
+                            return;
+                        }
+                    }
+                }
+
+                if (currentUnitMode === 'MOVE') {
+                    // 전쟁 중이거나 친선/동맹이 아닌 타인의 영토 진입 제한 체크
+                    if (tile.owner && tile.owner !== myPlayerId) {
+                        let rel = diploRelations[myPlayerId]?.[tile.owner];
+                        let isAtWar = rel?.status === 'WAR';
+                        let isAllyOrFriend = rel?.status === 'ALLY' || rel?.status === 'FRIEND';
+                        if (!isAtWar && !isAllyOrFriend) {
+                            alert('⚠️ 전쟁 중이거나 친선/동맹 관계가 아닌 국가의 영토에는 들어갈 수 없습니다.');
+                            return;
+                        }
+                    }
+
+                    let reachable = getReachableHexes(selectedUnit);
+                    let key = `${r},${c}`;
+                    if (reachable.has(key) && !unitOnTile) {
+                        let cost = reachable.get(key);
+                        selectedUnit.r = r; selectedUnit.c = c; selectedUnit.moves -= cost;
+
+                        if (isMultiplayer) {
+                            sendNetMsg({ type: 'ACTION_MOVE_UNIT', unitId: selectedUnit.id, r, c, moves: selectedUnit.moves });
+                        }
+
+                        updateFogOfWar();
+                        updateUnitActionBar();
+                        requestRender();
+                        return;
+                    }
+                }
+            }
+
+            if (unitOnTile) {
+                // 내 유닛이 아닌 상대 유닛을 클릭하고 내 유닛이 선택되어 있을 때 기습전쟁 여부 확인
+                if (selectedUnit && selectedUnit.owner === myPlayerId && unitOnTile.owner !== myPlayerId) {
+                    let enemyOwner = unitOnTile.owner;
+                    let rel = diploRelations[myPlayerId]?.[enemyOwner];
+                    if (rel && rel.status !== 'WAR') {
+                        let confirmSurprise = confirm(`⚔️ 이 국가는 전쟁 중이 아닙니다. 기습 전쟁을 선포하고 공격하시겠습니까?\n(기습 전쟁 시 동맹국을 포함한 전 세계적인 심각한 우호도 패널티가 발생합니다.)`);
+                        if (confirmSurprise) {
+                            declareSurpriseWar(enemyOwner);
+                            checkAndPerformAttack(selectedUnit, unitOnTile);
+                            return;
+                        }
+                    }
+                }
+
+                selectedUnit = unitOnTile; selectedTile = tile;
+                if (unitOnTile.owner === myPlayerId) openUnitActionBar(unitOnTile);
+                else deselectUnit();
+                requestRender();
+                return;
+            }
+
+            deselectUnit();
+            selectedTile = tile;
+            if (fogOfWar[r][c] > 0) showTileModal(tile);
+            requestRender();
+        }
+
+        function checkAndPerformAttack(attacker, defender) {
+            triggerTutorial('attack', '첫 전투 개시', '적 유닛을 공격하여 체력을 깎고 무찌를 수 있습니다. 근접 유닛은 적 유닛과 인접해야 하며, 원거리 유닛은 사거리 안에서 공격할 수 있습니다.');
+            performAttack(attacker, defender);
+        }
+
+        function declareSurpriseWar(enemyId) {
+            let rel = diploRelations[myPlayerId][enemyId];
+            rel.status = 'WAR';
+            rel.relation = 0;
+
+            // 기습전쟁 패널티: 모든 국가와의 우호도 대폭 하락 (동맹국 포함)
+            Object.keys(diploRelations[myPlayerId]).forEach(otherId => {
+                diploRelations[myPlayerId][otherId].relation = Math.max(0, diploRelations[myPlayerId][otherId].relation - 40);
+                if (diploRelations[myPlayerId][otherId].status === 'ALLY') {
+                    diploRelations[myPlayerId][otherId].status = 'NEUTRAL'; // 동맹 파기
+                }
+            });
+            alert('⚠️ 기습 전쟁 선포! 전 세계가 당신의 배신 행위에 분노하여 우호도가 급락하고 동맹이 파기되었습니다.');
+        }
+
+        function syncMoveUnit(unitId, r, c, moves) {
+            const u = units.find(unit => unit.id === unitId);
+            if (u) { u.r = r; u.c = c; u.moves = moves; updateFogOfWar(); requestRender(); }
+        }
+
+        function performAttack(attacker, defender) {
+            let aData = UNIT_TYPES[attacker.type];
+            let dData = UNIT_TYPES[defender.type];
+            let dmg = aData.attack;
+
+            if (playerLeader.id === 'caesar' && aData.category === 'MELEE') dmg = Math.floor(dmg * 1.2);
+            if (playerLeader.id === 'alexander') dmg = Math.floor(dmg * 1.15);
+            if (playerLeader.id === 'montezuma') {
+                let totalRes = (strategicRes.HORSES > 0 ? 1 : 0) + (strategicRes.IRON > 0 ? 1 : 0) + (strategicRes.NITER > 0 ? 1 : 0);
+                dmg += totalRes * 2;
+            }
+
+            let counterDmg = 0;
+            if (aData.category !== 'RANGED' && dData.attack > 0) {
+                counterDmg = Math.floor(dData.attack * 0.5);
+                if (playerLeader.id === 'nobunaga') counterDmg = Math.floor(counterDmg * 0.75);
+            }
+
+            syncAttack(attacker.id, defender.id, dmg, counterDmg);
+
+            if (isMultiplayer) {
+                sendNetMsg({ type: 'ACTION_ATTACK', attackerId: attacker.id, defenderId: defender.id, dmg, counterDmg });
+            }
+
+            attacker.moves = 0;
+            updateUnitActionBar();
+            requestRender();
+        }
+
+        function syncAttack(attackerId, defenderId, dmg, counterDmg) {
+            const attacker = units.find(u => u.id === attackerId);
+            const defender = units.find(u => u.id === defenderId);
+            if (!defender) return;
+
+            defender.hp -= dmg;
+            if (attacker && counterDmg > 0) attacker.hp -= counterDmg;
+
+            if (defender.hp <= 0) units = units.filter(u => u !== defender);
+            if (attacker && attacker.hp <= 0) {
+                units = units.filter(u => u !== attacker);
+                if (selectedUnit === attacker) deselectUnit();
+            }
+            updateFogOfWar();
+            requestRender();
+        }
+
+        function executeSettle() {
+            if (!selectedUnit || selectedUnit.type !== 'SETTLER' || selectedUnit.moves <= 0) return;
+            let check = checkSettleLegality(selectedUnit.r, selectedUnit.c);
+            if (!check.valid) return alert(`⚠️ 개척 불가: ${check.reason}`);
+
+            let tile = map[selectedUnit.r][selectedUnit.c];
+            let defaultName = !isCapitalFounded ? `${playerCivName} 수도` : `${playerCivName} 제${units.filter(u=>u.type==='SETTLER').length + 2}도시`;
+            let cityName = prompt(`도시 이름을 입력하십시오:`, defaultName);
+            if (!cityName) return;
+
+            let isCap = !isCapitalFounded;
+            syncSettle(selectedUnit.id, tile.r, tile.c, cityName, isCap, myPlayerId);
+
+            if (isMultiplayer) {
+                sendNetMsg({ type: 'ACTION_SETTLE', unitId: selectedUnit.id, r: tile.r, c: tile.c, cityName, isCapital: isCap, owner: myPlayerId });
+            }
+
+            deselectUnit();
+            updateFogOfWar();
+            refreshUI();
+            requestRender();
+
+            triggerTutorial('settle', '첫 도시 개척', '제국의 첫 도시가 세워졌습니다! 도시에서는 매턴 자원과 과학을 생산하며, 새로운 시설을 짓거나 병력을 훈련할 수 있습니다.');
+        }
+
+        function syncSettle(unitId, r, c, cityName, isCapital, owner) {
+            const tile = map[r][c];
+            tile.building = isCapital ? 'CAPITAL' : 'CITY';
+            tile.cityName = cityName;
+            tile.isCapital = isCapital;
+            claimHexArea(r, c, owner);
+
+            units = units.filter(u => u.id !== unitId);
+
+            if (owner === myPlayerId) {
+                if (isCapital) {
+                    isCapitalFounded = true;
+                    alert(`👑 [${cityName}]이(가) 제국의 수도로 창건되었습니다!`);
+                } else {
+                    alert(`🏙️ [${cityName}]이(가) 개척되었습니다!`);
+                }
+            }
+            updateFogOfWar();
+            refreshUI();
+            requestRender();
+        }
+
+        function executeCapture() {
+            if (!selectedUnit || selectedUnit.moves <= 0) return;
+            let tile = map[selectedUnit.r][selectedUnit.c];
+            if (tile.terrain.id === 'OCEAN' || tile.owner === myPlayerId) return;
+
+            syncCapture(tile.r, tile.c, myPlayerId);
+            if (isMultiplayer) sendNetMsg({ type: 'ACTION_CAPTURE', r: tile.r, c: tile.c, owner: myPlayerId });
+
+            selectedUnit.moves = 0;
+            if (playerLeader.id === 'caesar') gold += 35;
+            updateUnitActionBar();
+            refreshUI();
+            requestRender();
+        }
+
+        function syncCapture(r, c, newOwner) {
+            const tile = map[r][c];
+            tile.owner = newOwner;
+            if (tile.building === 'CAPITAL') {
+                if (newOwner === myPlayerId) alert(`🚩 수도 [${tile.cityName || '수도'}] 함락!`);
+            } else if (tile.building === 'CITY') {
+                if (newOwner === myPlayerId) alert(`🚩 도시 [${tile.cityName || '도시'}] 점령!`);
+            }
+            updateFogOfWar();
+            refreshUI();
+            requestRender();
+        }
+
+        function checkSettleLegality(cr, cc) {
+            let tile = map[cr][cc];
+            if (tile.terrain.id === 'OCEAN' || tile.terrain.id === 'MOUNTAIN') return { valid: false, reason: '해양/산맥 불가' };
+            if (tile.owner !== null || tile.building) return { valid: false, reason: '이미 소유권이 있는 타일' };
+
+            let radius1 = [tile, ...getHexNeighbors(cr, cc)];
+            for (let t of radius1) {
+                if (t.owner !== null) return { valid: false, reason: '3x3 영역 내에 이미 영토가 존재합니다.' };
+            }
+            for (let t of radius1) {
+                let nb = getHexNeighbors(t.r, t.c);
+                for (let n of nb) {
+                    if (n.owner !== null) return { valid: false, reason: '기존 영토가 인접해 있어 건설할 수 없습니다.' };
+                }
+            }
+            return { valid: true };
+        }
+
+        // =========================================================================
+        //  10. 도시 생산 & 타일 상세 (우주 식민지 프로그램 포함)
+        // =========================================================================
+        function showTileModal(tile) {
+            let modal = document.getElementById('tile-modal');
+            let hasIronTech = researchedTechs.includes('IRON_WORKING');
+            let hasNiterTech = researchedTechs.includes('GUNPOWDER');
+
+            let showRes = false;
+            if (tile.strategic === 'IRON' && hasIronTech) showRes = true;
+            if (tile.strategic === 'NITER' && hasNiterTech) showRes = true;
+            if (tile.strategic === 'HORSES') showRes = true;
+
+            let resInfo = showRes ? ` [자원: ${STRATEGIC_RESOURCES[tile.strategic].name} ${STRATEGIC_RESOURCES[tile.strategic].icon}]` : '';
+            let titlePrefix = tile.building === 'CAPITAL' ? '👑 수도' : (tile.building === 'CITY' ? '🏙️ 도시' : tile.terrain.name);
+            document.getElementById('tile-title').innerText = `${titlePrefix} (${tile.c}, ${tile.r})${resInfo}`;
+
+            let ownerName = tile.owner ? getCivInfo(tile.owner).name : '중립지';
+            let buildingName = tile.building ? (tile.cityName || BUILDINGS[tile.building]?.name || '도시 중심부') : '없음';
+            document.getElementById('tile-desc').innerHTML = `소유: <b>${ownerName}</b> | 시설: <b>${buildingName}</b><br>수확량: 🪙+${tile.terrain.gold} / 🪵+${tile.terrain.mat} / 🔬+${tile.terrain.sci}`;
+
+            let cityProdSec = document.getElementById('city-prod-sec');
+            let cityProdContent = document.getElementById('city-prod-content');
+
+            if (tile.owner === myPlayerId && (tile.building === 'CAPITAL' || tile.building === 'CITY')) {
+                cityProdSec.style.display = 'block';
+                let spaceUnlocked = researchedTechs.includes('SPACE_PROGRAM') && tile.building === 'CAPITAL';
+
+                let spaceHtml = '';
+                if (spaceUnlocked) {
+                    let spTurns = tile.spaceProgramTurns || 0;
+                    spaceHtml = `
+                        <hr style="border:none; height:1px; background:#475569; margin: 8px 0;">
+                        <p style="color:#38bdf8; font-size:13px; margin-bottom:6px;">🚀 <b>우주 식민지 프로그램</b> (완수: ${spTurns}/15턴)</p>
+                        <button class="btn btn-sci" style="width:100%; min-height:40px;" onclick="progressSpaceProgram(${tile.r}, ${tile.c})">
+                            🔭 우주 프로그램 추진 (+1턴 / 🪵50)
+                        </button>
+                    `;
+                }
+
+                if (tile.production) {
+                    cityProdContent.innerHTML = `
+                        <p style="color:#fbbf24; font-size:13px;">⛺ <b>개척자(Settler)</b> 양성 중 (남은 턴: <b>${tile.production.turnsLeft}</b> / 5)</p>
+                        ${spaceHtml}
+                    `;
+                } else {
+                    cityProdContent.innerHTML = `
+                        <button class="btn" style="background:linear-gradient(180deg, #059669, #047857); color:#fff; width:100%; min-height:44px;" ${materials < 70 ? 'disabled' : ''} onclick="startCitySettlerProduction(${tile.r}, ${tile.c})">
+                            ⛺ 개척자 양성 (5턴 소요 / 🪵70)
+                        </button>
+                        ${spaceHtml}
+                    `;
+                }
+            } else {
+                cityProdSec.style.display = 'none';
+            }
+
+            let buildList = document.getElementById('build-list');
+            buildList.innerHTML = '';
+            let maxBuild = playerLeader.id === 'qin' ? 4 : 3;
+
+            if (tile.owner === myPlayerId) {
+                Object.keys(BUILDINGS).forEach(bKey => {
+                    let b = BUILDINGS[bKey];
+                    if (b.capitalOnly && tile.building !== 'CAPITAL' && tile.building !== 'CITY') return;
+
+                    let cost = b.costMat;
+                    if (playerLeader.id === 'qin' && bKey === 'WALLS') cost = Math.floor(cost * 0.5);
+
+                    let terrainOk = !b.allowedTerrains || b.allowedTerrains.includes(tile.terrain.id);
+                    let techOk = !b.reqTech || researchedTechs.includes(b.reqTech);
+                    let resOk = true;
+                    if (b.specialRes === 'IRON' && !hasIronTech) resOk = false;
+                    if (b.specialRes === 'NITER' && !hasNiterTech) resOk = false;
+
+                    let canBuild = terrainOk && techOk && resOk && materials >= cost && buildCount < maxBuild && (!tile.building || tile.building === 'CAPITAL' || tile.building === 'CITY');
+
+                    let btn = document.createElement('button');
+                    btn.className = 'card-opt';
+                    btn.disabled = !canBuild;
+                    btn.innerHTML = `<div>${b.icon} <b>${b.name}</b></div><small style="color:#aaa;">🪵${cost}</small>`;
+                    btn.onclick = () => {
+                        materials -= cost; buildCount++;
+                        if (tile.building !== 'CAPITAL' && tile.building !== 'CITY') tile.building = bKey;
+                        if (isMultiplayer) sendNetMsg({ type: 'ACTION_BUILD', r: tile.r, c: tile.c, buildingKey: bKey, owner: myPlayerId });
+                        closeModal('tile-modal');
+                        refreshUI();
+                        requestRender();
+                    };
+                    buildList.appendChild(btn);
+                });
+            }
+
+            // 병력 모집 목록
+            let unitSec = document.getElementById('tile-unit-sec');
+            let unitList = document.getElementById('unit-recruit-list');
+            unitList.innerHTML = '';
+
+            if (tile.owner === myPlayerId && (tile.building === 'BARRACKS' || tile.building === 'CAPITAL' || tile.building === 'CITY')) {
+                unitSec.style.display = 'block';
+                Object.keys(UNIT_TYPES).forEach(uKey => {
+                    if (uKey === 'SETTLER') return;
+                    let u = UNIT_TYPES[uKey];
+                    let cost = u.costMat;
+                    if (playerLeader.id === 'genghis' && u.category === 'CAVALRY') cost = Math.floor(cost * 0.75);
+                    if (playerLeader.id === 'saladin' && uKey === 'MUSKETEER') cost = Math.floor(cost * 0.7);
+
+                    let techOk = !u.reqTech || researchedTechs.includes(u.reqTech);
+                    let resOk = true;
+                    let resDesc = '';
+                    if (u.reqRes === 'HORSES') { resOk = strategicRes.HORSES > 0; resDesc = '🐎 말 필요'; }
+                    else if (u.reqRes === 'IRON') { resOk = strategicRes.IRON > 0 && hasIronTech; resDesc = '⛓️ 철 필요 (철제 기술 연구 필요)'; }
+                    else if (u.reqRes === 'BOTH_IRON_HORSE') { resOk = strategicRes.IRON > 0 && strategicRes.HORSES > 0 && hasIronTech; resDesc = '🐎말 & ⛓️철 필요'; }
+                    else if (u.reqRes === 'NITER') { resOk = strategicRes.NITER > 0 && hasNiterTech; resDesc = '🧨 질산 필요 (화약 연구 필요)'; }
+
+                    let canRecruit = techOk && resOk && materials >= cost;
+
+                    let badgeTxt = '';
+                    if (!techOk) {
+                        let tName = TECHS.find(t=>t.id===u.reqTech)?.name || '기술';
+                        badgeTxt = `<span class="badge badge-req">[${tName}] 연구 필요</span><br>`;
+                    } else if (!resOk) {
+                        badgeTxt = `<span class="badge badge-req">${resDesc}</span><br>`;
+                    }
+
+                    let btn = document.createElement('button');
+                    btn.className = 'card-opt';
+                    btn.disabled = !canRecruit;
+                    let turnsText = u.buildTurnsLeft || u.buildTurns ? ` | ⏳${u.buildTurns || 2}턴` : '';
+                    btn.innerHTML = `${badgeTxt}<div>${u.icon} <b>${u.name}</b></div><small style="color:#aaa;">🪵${cost} | ⚔️${u.attack}${turnsText}</small>`;
+                    btn.onclick = () => {
+                        materials -= cost;
+                        let newUnit = {
+                            id: `u_${Date.now()}`,
+                            owner: myPlayerId,
+                            type: uKey,
+                            r: tile.r,
+                            c: tile.c,
+                            hp: 100,
+                            maxHp: 100,
+                            moves: u.buildTurns ? 0 : u.maxMoves,
+                            buildTurnsLeft: u.buildTurns || 0
+                        };
+                        units.push(newUnit);
+                        closeModal('tile-modal');
+                        updateFogOfWar();
+                        refreshUI();
+                        requestRender();
+                    };
+                    unitList.appendChild(btn);
+                });
+            } else {
+                unitSec.style.display = 'none';
+            }
+
+            modal.classList.add('active');
+        }
+
+        function startCitySettlerProduction(r, c) {
+            let tile = map[r][c];
+            if (materials < 70) return;
+            materials -= 70;
+            tile.production = { type: 'SETTLER', turnsLeft: 5, totalTurns: 5 };
+            if (isMultiplayer) sendNetMsg({ type: 'ACTION_START_PROD', r, c });
+            closeModal('tile-modal');
+            refreshUI();
+            requestRender();
+        }
+
+        function progressSpaceProgram(r, c) {
+            let tile = map[r][c];
+            if (materials < 50) return alert('자재가 부족합니다 (🪵50 필요).');
+            materials -= 50;
+            tile.spaceProgramTurns = (tile.spaceProgramTurns || 0) + 1;
+            if (tile.spaceProgramTurns >= 15) {
+                alert('🏆 [과학 승리] 수도에서 우주 식민지 프로그램을 성공적으로 완수했습니다! 인류는 새로운 별로 향합니다. 승리하셨습니다!');
+            } else {
+                alert(`🚀 우주 프로그램 추진 완료! (${tile.spaceProgramTurns}/15턴)`);
+            }
+            closeModal('tile-modal');
+            refreshUI();
+        }
+
+        function syncStartProd(r, c) { map[r][c].production = { type: 'SETTLER', turnsLeft: 5, totalTurns: 5 }; }
+        function syncBuild(r, c, bKey) { if (map[r][c].building !== 'CAPITAL' && map[r][c].building !== 'CITY') map[r][c].building = bKey; }
+
+        // =========================================================================
+        //  11. 맵 생성 알고리즘 (철/질산칼륨 시야 제한 적용)
+        // =========================================================================
+        function generateProceduralMap() {
+            map = [];
+            fogOfWar = [];
+
+            const seeds = [
+                { cx: MAP_COLS * 0.28, cy: MAP_ROWS * 0.45, r: MAP_COLS * 0.22, weight: 1.25 },
+                { cx: MAP_COLS * 0.72, cy: MAP_ROWS * 0.5, r: MAP_COLS * 0.25, weight: 1.3 },
+                { cx: MAP_COLS * 0.5, cy: MAP_ROWS * 0.75, r: MAP_COLS * 0.15, weight: 0.9 }
+            ];
+
+            function pseudoNoise(x, y, freq) {
+                return (Math.sin(x * freq * 1.5 + Math.cos(y * freq * 2.1)) + Math.cos(y * freq * 1.7 + Math.sin(x * freq * 1.9)) + 2) / 4;
+            }
+
+            for (let r = 0; r < MAP_ROWS; r++) {
+                map[r] = [];
+                fogOfWar[r] = new Uint8Array(MAP_COLS);
+                for (let c = 0; c < MAP_COLS; c++) {
+                    let edgeX = Math.min(c, MAP_COLS - 1 - c) / 5.0;
+                    let edgeY = Math.min(r, MAP_ROWS - 1 - r) / 4.0;
+                    let edgeFactor = Math.min(1.0, Math.min(edgeX, edgeY));
+
+                    let landAccum = 0;
+                    seeds.forEach(s => {
+                        let d = Math.hypot(c - s.cx, r - s.cy);
+                        if (d < s.r) landAccum += Math.cos((d / s.r) * Math.PI * 0.5) * s.weight;
+                    });
+
+                    let n = pseudoNoise(c, r, 0.16) * 0.6 + pseudoNoise(c, r, 0.35) * 0.4;
+                    let height = (landAccum * 0.65 + n * 0.45) * edgeFactor;
+                    let moisture = pseudoNoise(c + 15, r + 25, 0.14);
+
+                    let t = TERRAINS.OCEAN;
+                    if (height < 0.48) {
+                        t = TERRAINS.OCEAN;
+                    } else if (height > 0.92 && pseudoNoise(c * 2, r * 2, 0.35) > 0.65) {
+                        t = TERRAINS.MOUNTAIN;
+                    } else {
+                        if (moisture > 0.58) t = TERRAINS.FOREST;
+                        else if (moisture < 0.32 && Math.abs(r - MAP_ROWS * 0.5) < MAP_ROWS * 0.2) t = TERRAINS.DESERT;
+                        else t = TERRAINS.PLAINS;
+                    }
+
+                    let sRes = null;
+                    if (t.id !== 'OCEAN') {
+                        let rand = Math.random();
+                        if (t.id === 'PLAINS' && rand < 0.024) sRes = 'HORSES';
+                        else if ((t.id === 'MOUNTAIN' || t.id === 'PLAINS') && rand < 0.028) sRes = 'IRON';
+                        else if ((t.id === 'DESERT' || t.id === 'FOREST') && rand < 0.026) sRes = 'NITER';
+                    }
+
+                    map[r][c] = {
+                        r, c, terrain: t, strategic: sRes, owner: null, building: null,
+                        cityName: null, isCapital: false, production: null
+                    };
+                }
+            }
+        }
+
+        function updateFogOfWar() {
+            for (let r = 0; r < MAP_ROWS; r++) {
+                for (let c = 0; c < MAP_COLS; c++) {
+                    if (fogOfWar[r][c] === 2) fogOfWar[r][c] = 1;
+                }
+            }
+
+            const extraSight = playerLeader && playerLeader.id === 'cyrus' ? 1 : 0;
+            const myUnits = units.filter(u => u.owner === myPlayerId);
+            myUnits.forEach(u => {
+                let sightRadius = UNIT_TYPES[u.type].maxMoves + extraSight;
+                revealHexCircle(u.r, u.c, sightRadius);
+            });
+
+            for (let r = 0; r < MAP_ROWS; r++) {
+                for (let c = 0; c < MAP_COLS; c++) {
+                    if (map[r][c].owner === myPlayerId) revealHexCircle(r, c, 2);
+                }
+            }
+
+            aiNations.forEach(ai => {
+                let hasSpotted = units.some(u => u.owner === ai.id && fogOfWar[u.r][u.c] === 2);
+                if (hasSpotted && diploRelations[myPlayerId]?.[ai.id]) {
+                    // 조우 처리
+                }
+            });
+        }
+
+        function revealHexCircle(cr, cc, radius) {
+            for (let r = Math.max(0, cr - radius); r <= Math.min(MAP_ROWS - 1, cr + radius); r++) {
+                for (let c = Math.max(0, cc - radius); c <= Math.min(MAP_COLS - 1, cc + radius); c++) {
+                    if (getHexDistance(cr, cc, r, c) <= radius) fogOfWar[r][c] = 2;
+                }
+            }
+        }
+
+        // =========================================================================
+        //  12. 온디맨드 렌더러
+        // =========================================================================
+        function renderLoop() {
+            if (needsRender) {
+                render();
+                needsRender = false;
+            }
+            requestAnimationFrame(renderLoop);
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+            ctx.save();
+            ctx.scale(scale, scale);
+            ctx.translate(-cameraX, -cameraY);
+
+            let vLeft = cameraX, vTop = cameraY;
+            let vRight = cameraX + (canvas.width / dpr) / scale;
+            let vBottom = cameraY + (canvas.height / dpr) / scale;
+
+            let minRow = Math.max(0, Math.floor((vTop - HEX_R) / HEX_VERT_SPACING));
+            let maxRow = Math.min(MAP_ROWS - 1, Math.ceil((vBottom + HEX_R) / HEX_VERT_SPACING));
+            let minCol = Math.max(0, Math.floor((vLeft - HEX_W) / HEX_W) - 1);
+            let maxCol = Math.min(MAP_COLS - 1, Math.ceil((vRight + HEX_W) / HEX_W) + 1);
+
+            let hasIronTech = researchedTechs.includes('IRON_WORKING');
+            let hasNiterTech = researchedTechs.includes('GUNPOWDER');
+
+            for (let r = minRow; r <= maxRow; r++) {
+                for (let c = minCol; c <= maxCol; c++) {
+                    let tile = map[r][c];
+                    let center = getHexCenter(c, r);
+                    let fogState = fogOfWar[r][c];
+
+                    traceHex(ctx, center.x, center.y, HEX_R - 0.5);
+
+                    if (fogState === 0) {
+                        ctx.fillStyle = '#020617'; ctx.fill();
+                        ctx.strokeStyle = 'rgba(15, 23, 42, 0.6)'; ctx.lineWidth = 0.6; ctx.stroke();
+                        continue;
+                    }
+
+                    ctx.fillStyle = tile.terrain.color; ctx.fill();
+
+                    if (tile.terrain.id === 'FOREST') {
+                        ctx.fillStyle = '#0f2918'; ctx.beginPath(); ctx.arc(center.x, center.y, 4, 0, Math.PI * 2); ctx.fill();
+                    } else if (tile.terrain.id === 'MOUNTAIN') {
+                        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(center.x, center.y - 7); ctx.lineTo(center.x - 5, center.y + 5); ctx.lineTo(center.x + 5, center.y + 5); ctx.fill();
+                    }
+
+                    // 전략 자원 시야 제한 (연구 전에는 안 보임)
+                    let showResIcon = false;
+                    if (tile.strategic) {
+                        if (tile.strategic === 'HORSES') showResIcon = true;
+                        if (tile.strategic === 'IRON' && hasIronTech) showResIcon = true;
+                        if (tile.strategic === 'NITER' && hasNiterTech) showResIcon = true;
+                    }
+
+                    if (showResIcon && fogState === 2) {
+                        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)'; ctx.beginPath(); ctx.arc(center.x, center.y - 6, 6.5, 0, Math.PI * 2); ctx.fill();
+                        ctx.font = '9px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                        ctx.fillText(STRATEGIC_RESOURCES[tile.strategic].icon, center.x, center.y - 6);
+                    }
+
+                    if (tile.owner) {
+                        traceHex(ctx, center.x, center.y, HEX_R - 1.5);
+                        ctx.lineWidth = 2.8; ctx.strokeStyle = getCivInfo(tile.owner).color; ctx.stroke(); ctx.lineWidth = 1;
+                    }
+
+                    if (tile.building) {
+                        ctx.font = '15px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                        let icon = tile.building === 'CAPITAL' ? '👑' : (tile.building === 'CITY' ? '🏙️' : (BUILDINGS[tile.building]?.icon || '🏛️'));
+                        ctx.fillText(icon, center.x, center.y + 3);
+
+                        if (tile.production && fogState === 2) {
+                            let pct = 1 - (tile.production.turnsLeft / tile.production.totalTurns);
+                            ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(center.x - 10, center.y + 11, 20, 3);
+                            ctx.fillStyle = '#38bdf8'; ctx.fillRect(center.x - 10, center.y + 11, 20 * pct, 3);
+                        }
+                    }
+
+                    if (fogState === 1) {
+                        traceHex(ctx, center.x, center.y, HEX_R - 0.5);
+                        ctx.fillStyle = 'rgba(2, 6, 23, 0.62)'; ctx.fill();
+                    }
+
+                    if (selectedTile && selectedTile.r === r && selectedTile.c === c) {
+                        traceHex(ctx, center.x, center.y, HEX_R + 1);
+                        ctx.strokeStyle = '#facc15'; ctx.lineWidth = 3; ctx.stroke();
+                    }
+                }
+            }
+
+            if (selectedUnit && selectedUnit.owner === myPlayerId && isMyTurn()) {
+                if (currentUnitMode === 'MOVE' && selectedUnit.moves > 0) {
+                    let reachable = getReachableHexes(selectedUnit);
+                    ctx.fillStyle = 'rgba(37, 99, 235, 0.4)';
+                    reachable.forEach((cost, key) => {
+                        let [r, c] = key.split(',').map(Number);
+                        if (!(r === selectedUnit.r && c === selectedUnit.c)) {
+                            let center = getHexCenter(c, r);
+                            traceHex(ctx, center.x, center.y, HEX_R - 0.5); ctx.fill();
+                        }
+                    });
+                } else if (currentUnitMode === 'ATTACK' && selectedUnit.moves > 0) {
+                    let targets = getAttackableHexTargets(selectedUnit);
+                    targets.forEach(t => {
+                        let center = getHexCenter(t.c, t.r);
+                        traceHex(ctx, center.x, center.y, HEX_R - 0.5);
+                        ctx.fillStyle = 'rgba(239, 68, 68, 0.45)';
+                        ctx.fill();
+                        ctx.strokeStyle = '#ef4444';
+                        ctx.lineWidth = 2.5;
+                        ctx.stroke();
+                    });
+                }
+            }
+
+            units.forEach(u => {
+                if (fogOfWar[u.r][u.c] !== 2) return;
+                let center = getHexCenter(u.c, u.r);
+                let utype = UNIT_TYPES[u.type];
+                let nationColor = getCivInfo(u.owner).color;
+
+                ctx.beginPath(); ctx.arc(center.x, center.y, 13, 0, Math.PI * 2);
+                ctx.fillStyle = nationColor; ctx.fill();
+                ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
+
+                ctx.font = '14px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(utype.icon, center.x, center.y);
+
+                if (u.buildTurnsLeft && u.buildTurnsLeft > 0) {
+                    ctx.font = '10px sans-serif';
+                    ctx.fillStyle = '#fbbf24';
+                    ctx.fillText(`⏳${u.buildTurnsLeft}`, center.x, center.y - 18);
+                }
+
+                if (u.maxHp > 0 && u.type !== 'SETTLER') {
+                    let barW = 24, barH = 3.5, barX = center.x - barW / 2, barY = center.y - 19;
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)'; ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
+                    let hpRatio = Math.max(0, u.hp / u.maxHp);
+                    let hpColor = hpRatio <= 0.25 ? '#ef4444' : (hpRatio <= 0.55 ? '#eab308' : '#22c55e');
+                    ctx.fillStyle = hpColor; ctx.fillRect(barX, barY, barW * hpRatio, barH);
+                }
+
+                if (selectedUnit === u) {
+                    ctx.strokeStyle = '#facc15'; ctx.lineWidth = 2.5;
+                    traceHex(ctx, center.x, center.y, HEX_R + 2); ctx.stroke();
+                }
+            });
+
+            ctx.restore();
+            drawMinimapHUD();
+        }
+
+        function drawMinimapHUD() {
+            mctx.fillStyle = '#020617';
+            mctx.fillRect(0, 0, MAP_COLS, MAP_ROWS);
+
+            for (let r = 0; r < MAP_ROWS; r++) {
+                for (let c = 0; c < MAP_COLS; c++) {
+                    let fog = fogOfWar[r][c];
+                    if (fog === 0) continue;
+                    let tile = map[r][c];
+                    if (tile.owner) mctx.fillStyle = getCivInfo(tile.owner).color;
+                    else mctx.fillStyle = tile.terrain.miniColor;
+
+                    if (fog === 1) {
+                        mctx.globalAlpha = 0.45; mctx.fillRect(c, r, 1, 1); mctx.globalAlpha = 1.0;
+                    } else {
+                        mctx.fillRect(c, r, 1, 1);
+                    }
+                }
+            }
+
+            let vColStart = Math.max(0, Math.floor(cameraX / HEX_W));
+            let vColEnd = Math.min(MAP_COLS, Math.ceil((cameraX + (canvas.width / dpr) / scale) / HEX_W));
+            let vRowStart = Math.max(0, Math.floor(cameraY / HEX_VERT_SPACING));
+            let vRowEnd = Math.min(MAP_ROWS, Math.ceil((cameraY + (canvas.height / dpr) / scale) / HEX_VERT_SPACING));
+
+            mctx.strokeStyle = '#facc15'; mctx.lineWidth = 1.2;
+            mctx.strokeRect(vColStart, vRowStart, vColEnd - vColStart, vRowEnd - vRowStart);
+        }
+
+        // =========================================================================
+        //  13. 보조 기하학 및 유틸리티
+        // =========================================================================
+        function getHexCenter(c, r) { return { x: (c + 0.5 * (r % 2)) * HEX_W, y: r * HEX_VERT_SPACING }; }
+
+        function traceHex(ctx, cx, cy, r) {
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+                let angle = (Math.PI / 180) * (60 * i - 30);
+                let x = cx + r * Math.cos(angle); let y = cy + r * Math.sin(angle);
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+        }
+
+        function getHexNeighbors(r, c) {
+            let neighbors = [];
+            const isOdd = (r % 2) !== 0;
+            const deltas = isOdd ? [
+                {dr: -1, dc: 0}, {dr: -1, dc: 1},
+                {dr: 0, dc: -1}, {dr: 0, dc: 1},
+                {dr: 1, dc: 0}, {dr: 1, dc: 1}
+            ] : [
+                {dr: -1, dc: -1}, {dr: -1, dc: 0},
+                {dr: 0, dc: -1}, {dr: 0, dc: 1},
+                {dr: 1, dc: -1}, {dr: 1, dc: 0}
+            ];
+            for (let d of deltas) {
+                let nr = r + d.dr, nc = c + d.dc;
+                if (nr >= 0 && nr < MAP_ROWS && nc >= 0 && nc < MAP_COLS) neighbors.push(map[nr][nc]);
+            }
+            return neighbors;
+        }
+
+        function getHexDistance(r1, c1, r2, c2) {
+            let x1 = c1 - (r1 - (r1 & 1)) / 2, z1 = r1, y1 = -x1 - z1;
+            let x2 = c2 - (r2 - (r2 & 1)) / 2, z2 = r2, y2 = -x2 - z2;
+            return (Math.abs(x1 - x2) + Math.abs(y1 - y2) + Math.abs(z1 - z2)) / 2;
+        }
+
+        function claimHexArea(cr, cc, ownerId) {
+            if (map[cr] && map[cr][cc]) {
+                map[cr][cc].owner = ownerId;
+                getHexNeighbors(cr, cc).forEach(t => t.owner = ownerId);
+            }
+        }
+
+        function getReachableHexes(unit) {
+            let reachable = new Map();
+            let queue = [{ r: unit.r, c: unit.c, cost: 0 }];
+            reachable.set(`${unit.r},${unit.c}`, 0);
+            let hasNav = researchedTechs.includes('NAVIGATION');
+
+            while (queue.length > 0) {
+                let curr = queue.shift();
+                let neighbors = getHexNeighbors(curr.r, curr.c);
+
+                for (let nextTile of neighbors) {
+                    if (nextTile.terrain.id === 'OCEAN' && !hasNav) continue;
+
+                    let stepCost = nextTile.terrain.moveCost;
+                    if (unit.owner === myPlayerId && playerLeader.id === 'pachacuti' && nextTile.terrain.id === 'MOUNTAIN') stepCost = 1;
+
+                    let totalCost = curr.cost + stepCost;
+                    if (totalCost <= unit.moves) {
+                        let key = `${nextTile.r},${nextTile.c}`;
+                        if (!reachable.has(key) || reachable.get(key) > totalCost) {
+                            reachable.set(key, totalCost);
+                            queue.push({ r: nextTile.r, c: nextTile.c, cost: totalCost });
+                        }
+                    }
+                }
+            }
+            return reachable;
+        }
+
+        function getAttackableHexTargets(unit) {
+            let targets = [];
+            let uData = UNIT_TYPES[unit.type];
+            units.forEach(enemy => {
+                if (enemy.owner !== myPlayerId && fogOfWar[enemy.r][enemy.c] === 2) {
+                    let dist = getHexDistance(unit.r, unit.c, enemy.r, enemy.c);
+                    if (uData.category === 'RANGED') {
+                        if (dist >= uData.minRange && dist <= uData.range) targets.push(enemy);
+                    } else if (dist === 1) targets.push(enemy);
+                }
+            });
+            return targets;
+        }
+
+        function openUnitActionBar(unit) {
+            let bar = document.getElementById('unit-action-bar');
+            bar.style.display = 'flex';
+            currentUnitMode = 'MOVE';
+            updateUnitActionBar();
+        }
+
+        function updateUnitActionBar() {
+            if (!selectedUnit) return;
+            let uData = UNIT_TYPES[selectedUnit.type];
+            let display = document.getElementById('unit-info-display');
+            display.innerHTML = `
+                <span style="color:#facc15;">${uData.icon} ${uData.name}</span> |
+                이동: <b style="color:#38bdf8;">${selectedUnit.moves}/${uData.maxMoves}</b>
+            `;
+
+            document.getElementById('btn-mode-move').className = `action-btn ${currentUnitMode === 'MOVE' ? 'active' : ''}`;
+            document.getElementById('btn-mode-attack').className = `action-btn ${currentUnitMode === 'ATTACK' ? 'active' : ''}`;
+
+            let settleBtn = document.getElementById('btn-mode-settle');
+            if (selectedUnit.type === 'SETTLER') {
+                settleBtn.style.display = 'inline-block';
+                let check = checkSettleLegality(selectedUnit.r, selectedUnit.c);
+                settleBtn.disabled = !check.valid || selectedUnit.moves <= 0;
+            } else {
+                settleBtn.style.display = 'none';
+            }
+
+            let currTile = map[selectedUnit.r][selectedUnit.c];
+            let canCapture = currTile.owner !== myPlayerId && selectedUnit.moves > 0 && currTile.terrain.id !== 'OCEAN' && selectedUnit.type !== 'SETTLER';
+            document.getElementById('btn-mode-capture').disabled = !canCapture;
+        }
+
+        function setUnitMode(mode) {
+            currentUnitMode = mode;
+            updateUnitActionBar();
+            requestRender();
+        }
+
+        function deselectUnit() {
+            selectedUnit = null;
+            document.getElementById('unit-action-bar').style.display = 'none';
+            requestRender();
+        }
+
+        function expandHexBorder(nationId) {
+            let cand = [];
+            for (let r = 0; r < MAP_ROWS; r++) {
+                for (let c = 0; c < MAP_COLS; c++) {
+                    if (map[r][c].owner === null) {
+                        let nb = getHexNeighbors(r, c);
+                        if (nb.some(t => t.owner === nationId)) cand.push(map[r][c]);
+                    }
+                }
+            }
+            if (cand.length > 0) {
+                let chosen = cand[Math.floor(Math.random() * cand.length)];
+                chosen.owner = nationId;
+            }
+        }
+
+        function focusCameraOnMyPlayer() {
+            let pUnit = units.find(u => u.owner === myPlayerId);
+            if (pUnit) {
+                let center = getHexCenter(pUnit.c, pUnit.r);
+                cameraX = center.x - (canvas.width / dpr) / (2 * scale);
+                cameraY = center.y - (canvas.height / dpr) / (2 * scale);
+            }
+        }
+
+        function resizeCanvas() {
+            if (!canvas) return;
+            dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+            canvas.width = window.innerWidth * dpr;
+            canvas.height = window.innerHeight * dpr;
+            ctx.scale(dpr, dpr);
+            requestRender();
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+        // =========================================================================
+        //  14. 기술 연구 모달 (시대별 탭 및 이전 시대 2개 이상 완료 조건)
+        // =========================================================================
+        let currentTechEraTab = '고대 시대';
+
+        function openTechModal() {
+            triggerTutorial('tech', '과학 연구 시스템', '과학력을 소모하여 새로운 기술을 연구하세요. 고전 시대 이후의 기술을 연구하려면 직전 시대의 기술을 2개 이상 완료해야 합니다.');
+            renderTechModalContent();
+            document.getElementById('tech-modal').classList.add('active');
+        }
+
+        function renderTechModalContent() {
+            const eras = ['고대 시대', '고전 시대', '중세 시대', '르네상스 시대', '근대 시대', '현대 시대'];
+            let tabsContainer = document.getElementById('tech-tabs-container');
+            tabsContainer.innerHTML = '';
+
+            eras.forEach(era => {
+                let tab = document.createElement('button');
+                tab.className = `tech-tab ${currentTechEraTab === era ? 'active' : ''}`;
+                tab.innerText = era;
+                tab.onclick = () => { currentTechEraTab = era; renderTechModalContent(); };
+                tabsContainer.appendChild(tab);
+            });
+
+            let container = document.getElementById('tech-tree-container');
+            container.innerHTML = '';
+
+            let eraTechs = TECHS.filter(t => t.era === currentTechEraTab);
+            eraTechs.forEach(t => {
+                let isDone = researchedTechs.includes(t.id);
+                let preOk = t.pre.every(p => researchedTechs.includes(p));
+
+                // 이전 시대 기술 2개 이상 완료 조건 검증
+                let eraIndex = eras.indexOf(currentTechEraTab);
+                let prevEraOk = true;
+                if (eraIndex > 0) {
+                    let prevEraName = eras[eraIndex - 1];
+                    let prevEraTechIds = TECHS.filter(item => item.era === prevEraName).map(item => item.id);
+                    let completedPrevCount = prevEraTechIds.filter(id => researchedTechs.includes(id)).length;
+                    if (completedPrevCount < 2) prevEraOk = false;
+                }
+
+                let canResearch = !isDone && preOk && prevEraOk && science >= t.cost;
+
+                let div = document.createElement('div');
+                div.className = `tech-node ${isDone ? 'done' : ''}`;
+
+                let reqReason = '';
+                if (!preOk) reqReason = '<br><span style="color:#f87171; font-size:11px;">⚠️ 선행 기술 연구 필요</span>';
+                else if (!prevEraOk) reqReason = `<br><span style="color:#f87171; font-size:11px;">⚠️ 직전 시대 기술을 2개 이상 완료해야 합니다.</span>`;
+
+                div.innerHTML = `
+                    <div>
+                        <b>${t.name}</b> <small style="color:#38bdf8;">(🔬${t.cost})</small>
+                        <div style="color:#94a3b8; font-size:12px; margin-top:2px;">${t.desc}</div>
+                        <div style="color:#fbbf24; font-size:11px; font-style:italic; margin-top:2px;">${t.flavor}</div>
+                        ${reqReason}
+                    </div>
+                    <button class="btn" ${!canResearch && !isDone ? 'disabled' : ''} onclick="research('${t.id}', ${t.cost}, '${t.name.replace(/'/g, "")}', '${t.flavor.replace(/'/g, "")}')">${isDone ? '완료' : '연구'}</button>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function research(id, cost, techName, flavorText) {
+            science -= cost;
+            researchedTechs.push(id);
+            renderTechModalContent();
+            refreshUI();
+            requestRender();
+
+            alert(`🔬 [${techName}] 기술 연구 완료!\n\n"${flavorText}"`);
+        }
+
+        // =========================================================================
+        //  15. 외교 시스템 및 국가별 인터랙션
+        // =========================================================================
+        function openDiploModal() {
+            triggerTutorial('diplo', '외교 시스템', '다른 문명들과 우호도를 관리하고, 선물, 외교단, 동맹, 선전포고 등의 외교 행동을 수행할 수 있습니다.');
+            let list = document.getElementById('diplo-list');
+            list.innerHTML = '';
+
+            let otherCivs = [];
+            if (isMultiplayer) otherCivs.push(myPlayerId === 'player_host' ? 'player_guest' : 'player_host');
+            aiNations.forEach(ai => otherCivs.push(ai.id));
+
+            if (otherCivs.length === 0) {
+                list.innerHTML = `<p style="color:#64748b; font-size:13px; text-align:center; padding:20px;">만난 다른 문명이 없습니다.</p>`;
+            } else {
+                otherCivs.forEach(civId => {
+                    let civInfo = getCivInfo(civId);
+                    let rel = diploRelations[myPlayerId]?.[civId] || { relation: 50, status: 'NEUTRAL' };
+
+                    let div = document.createElement('div');
+                    div.style.background = '#1e293b'; div.style.padding = '12px'; div.style.borderRadius = '8px';
+                    div.style.border = '1px solid #334155';
+
+                    let statusColor = '#94a3b8';
+                    if (rel.status === 'ALLY') statusColor = '#22c55e';
+                    else if (rel.status === 'FRIEND') statusColor = '#38bdf8';
+                    else if (rel.status === 'WAR') statusColor = '#ef4444';
+                    else if (rel.status === 'DENOUNCED') statusColor = '#f97316';
+
+                    div.innerHTML = `
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                            <div><h4 style="color:${civInfo.color};">${civInfo.avatar} ${civInfo.name}</h4><small style="color:#aaa;">문명: ${civInfo.civ}</small></div>
+                            <div style="text-align:right;"><span style="font-size:12px; color:${statusColor}; font-weight:bold;">상태: ${rel.status}</span><br><small style="color:#cbd5e1;">우호도: ${rel.relation}/100</small></div>
+                        </div>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+                            <button class="btn" style="background:#0f172a; font-size:11px; padding:4px 8px;" onclick="diploSendGift('${civId}')">🎁 선물 보내기 (금화 30)</button>
+                            <button class="btn" style="background:#0f172a; font-size:11px; padding:4px 8px;" onclick="diploSendEnvoy('${civId}')">📜 외교단 파견 (금화 50, 말 1)</button>
+                            <button class="btn" style="background:#0f172a; font-size:11px; padding:4px 8px;" onclick="diploDemand('${civId}')">💰 물품 요구</button>
+                            <button class="btn" style="background:#0f172a; font-size:11px; padding:4px 8px;" onclick="diploDenounce('${civId}')">🗣️ 공개 비난</button>
+                            <button class="btn" style="background:#0f172a; font-size:11px; padding:4px 8px;" onclick="diploDeclareFriend('${civId}')">🤝 친선 선포</button>
+                            <button class="btn" style="background:#0f172a; font-size:11px; padding:4px 8px;" onclick="diploDeclareAlly('${civId}')">⭐ 동맹 선언</button>
+                            <button class="btn" style="background:#0f172a; font-size:11px; padding:4px 8px; border-color:#ef4444; color:#ef4444;" onclick="diploDeclareWar('${civId}')">⚔️ 선전포고</button>
+                            <button class="btn" style="background:#0f172a; font-size:11px; padding:4px 8px;" onclick="diploPeace('${civId}')">🕊️ 평화 협정</button>
+                        </div>
+                    `;
+                    list.appendChild(div);
+                });
+            }
+            document.getElementById('diplo-modal').classList.add('active');
+        }
+
+        // 외교 액션들
+        function diploSendGift(targetId) {
+            if (gold < 30) return alert('금화가 부족합니다 (🪙30 필요).');
+            gold -= 30;
+            let rel = diploRelations[myPlayerId][targetId];
+            rel.relation = Math.min(100, rel.relation + 15);
+            alert('🎁 선물을 전달하여 상대방과의 우호도가 상승했습니다!');
+            openDiploModal(); refreshUI();
+        }
+
+        function diploSendEnvoy(targetId) {
+            if (gold < 50 || strategicRes.HORSES < 1) return alert('금화 50과 야생마 1마리가 필요합니다.');
+            gold -= 50; strategicRes.HORSES--;
+            let rel = diploRelations[myPlayerId][targetId];
+            rel.relation = Math.min(100, rel.relation + 30);
+            alert('📜 외교단을 파견하여 우호도가 대폭 상승했습니다.');
+            openDiploModal(); refreshUI();
+        }
+
+        function diploDemand(targetId) {
+            let rel = diploRelations[myPlayerId][targetId];
+            rel.relation = Math.max(0, rel.relation - 25);
+            let success = Math.random() < 0.5;
+            if (success) {
+                gold += 40;
+                alert('💰 물품 요구 성공! 상대방이 굴복하여 40 금화를 조공했습니다. (우호도 하락)');
+            } else {
+                alert('❌ 물품 요구 거절! 상대방이 분노했습니다. (우호도 하락)');
+            }
+            openDiploModal(); refreshUI();
+        }
+
+        function diploDenounce(targetId) {
+            let rel = diploRelations[myPlayerId][targetId];
+            rel.status = 'DENOUNCED';
+            rel.denounceTurns = 0;
+            rel.relation = Math.max(0, rel.relation - 30);
+            alert('🗣️ 공개 비난을 선포했습니다. 5턴 후에 공식 전쟁을 선포할 수 있습니다.');
+            openDiploModal();
+        }
+
+        function diploDeclareFriend(targetId) {
+            let rel = diploRelations[myPlayerId][targetId];
+            if (rel.relation < 55) return alert('우호도가 부족합니다 (55 이상 필요).');
+            rel.status = 'FRIEND';
+            alert('🤝 상대방이 친선 관계 선포를 수락했습니다.');
+            openDiploModal();
+        }
+
+        function diploDeclareAlly(targetId) {
+            let rel = diploRelations[myPlayerId][targetId];
+            if (rel.status !== 'FRIEND' || rel.relation < 75) return alert('친선 상태이며 우호도가 75 이상이어야 동맹을 맺을 수 있습니다.');
+            let success = Math.random() < (rel.relation / 100);
+            if (success) {
+                rel.status = 'ALLY';
+                alert('⭐ 축하합니다! 상대방과 동맹이 체결되었습니다.');
+            } else {
+                alert('❌ 상대방이 동맹 제안을 거절했습니다.');
+            }
+            openDiploModal();
+        }
+
+        function diploDeclareWar(targetId) {
+            let rel = diploRelations[myPlayerId][targetId];
+            if (rel.status === 'DENOUNCED' && rel.denounceTurns < 5) {
+                return alert(`공개 비난 후 5턴이 지나야 공식 전쟁을 선포할 수 있습니다. (현재 ${rel.denounceTurns}/5턴)`);
+            }
+            rel.status = 'WAR';
+            rel.warTurns = 0;
+            rel.relation = 0;
+            alert('⚔️ 공식 전쟁 선포! 이제 적 영토 진입과 공격이 가능합니다.');
+            openDiploModal();
+        }
+
+        function diploPeace(targetId) {
+            let rel = diploRelations[myPlayerId][targetId];
+            if (rel.status !== 'WAR') return alert('전쟁 중이 아닙니다.');
+            if (rel.warTurns < 10) return alert(`전쟁 개시 후 10턴이 지나야 평화 협정이 가능합니다. (현재 ${rel.warTurns}/10턴)`);
+
+            rel.status = 'NEUTRAL';
+            rel.relation = 40;
+            alert('🕊️ 평화 협정이 체결되었습니다. 양국 간의 전쟁이 종식됩니다.');
+            openDiploModal();
+        }
+
+        // =========================================================================
+        //  16. UI 새로고침 및 저장/로드
+        // =========================================================================
+        function refreshUI() {
+            const myIncome = playerLeader ? calculateCivIncome(myPlayerId) : { gold: 0, mat: 0, sci: 0, horses: 0, iron: 0, niter: 0 };
+
+            document.getElementById('turn-txt').innerText = turn;
+            document.getElementById('gold-txt').innerText = gold;
+            document.getElementById('gold-inc').innerText = myIncome.gold;
+            document.getElementById('mat-txt').innerText = materials;
+            document.getElementById('mat-inc').innerText = myIncome.mat;
+            document.getElementById('sci-txt').innerText = science;
+            document.getElementById('sci-inc').innerText = myIncome.sci;
+            document.getElementById('build-cnt').innerText = buildCount;
+            document.getElementById('max-build-cnt').innerText = playerLeader && playerLeader.id === 'qin' ? 4 : 3;
+
+            document.getElementById('res-horses').innerText = strategicRes.HORSES;
+            document.getElementById('res-iron').innerText = strategicRes.IRON;
+            document.getElementById('res-niter').innerText = strategicRes.NITER;
+        }
+
+        function saveGameToStorage() {
+            try {
+                localStorage.setItem('civ_game_autosave', JSON.stringify({
+                    turn, gold, materials, science, buildCount, isCapitalFounded,
+                    playerLeader, playerCivName, researchedTechs, strategicRes,
+                    MAP_COLS, MAP_ROWS, HEX_R, currentMapPreset,
+                    map, units, aiNations, turnOrder, currentTurnIdx, activeCivId,
+                    diploRelations, fogOfWar: fogOfWar.map(row => Array.from(row))
+                }));
+                alert('💾 로컬 저장 완료!');
+            } catch (e) { alert('저장 오류: ' + e.message); }
+        }
+
+        function loadGameFromStorage() {
+            const raw = localStorage.getItem('civ_game_autosave');
+            if (!raw) return alert('저장 데이터가 없습니다.');
+            try {
+                const data = JSON.parse(raw);
+                turn = data.turn; gold = data.gold; materials = data.materials; science = data.science;
+                buildCount = data.buildCount; isCapitalFounded = data.isCapitalFounded;
+                playerLeader = data.playerLeader; playerCivName = data.playerCivName;
+                researchedTechs = data.researchedTechs; strategicRes = data.strategicRes;
+                MAP_COLS = data.MAP_COLS; MAP_ROWS = data.MAP_ROWS; HEX_R = data.HEX_R;
+                HEX_W = Math.sqrt(3) * HEX_R; HEX_VERT_SPACING = 1.5 * HEX_R;
+                map = data.map; units = data.units; aiNations = data.aiNations;
+                turnOrder = data.turnOrder; currentTurnIdx = data.currentTurnIdx; activeCivId = data.activeCivId;
+                diploRelations = data.diploRelations || {};
+                fogOfWar = data.fogOfWar.map(arr => new Uint8Array(arr));
+
+                document.getElementById('lobby-view').style.display = 'none';
+                document.getElementById('game-view').style.display = 'block';
+
+                canvas = document.getElementById('gameCanvas'); ctx = canvas.getContext('2d');
+                minimapCanvas = document.getElementById('minimapCanvas'); mctx = minimapCanvas.getContext('2d');
+                minimapCanvas.width = MAP_COLS; minimapCanvas.height = MAP_ROWS;
+
+                resizeCanvas(); focusCameraOnMyPlayer(); updateTurnBadge(); refreshUI();
+                requestRender(); requestAnimationFrame(renderLoop);
+                alert('📂 저장 데이터 불러오기 완료!');
+            } catch (e) { alert('불러오기 오류: ' + e.message); }
+        }
+
+        function returnToLobby() {
+            if (confirm('로비로 돌아가시겠습니까?')) location.reload();
+        }
+
+        function openTurnOrderModal() {
+            let container = document.getElementById('turn-order-container');
+            container.innerHTML = '';
+            turnOrder.forEach((civId, idx) => {
+                let info = getCivInfo(civId);
+                let item = document.createElement('div');
+                item.className = `turn-order-item ${civId === myPlayerId ? 'my-civ' : ''}`;
+                item.innerHTML = `<span>${idx + 1}. ${info.avatar} ${info.name}</span>`;
+                container.appendChild(item);
+            });
+            document.getElementById('turn-order-modal').classList.add('active');
+        }
+
+        function closeTurnOrderAnnouncement() {
+            closeModal('turn-order-modal');
+            startTurnForCiv(turnOrder[currentTurnIdx]);
+        }
+
+        // =========================================================================
+        //  17. 터치 및 마우스 이벤트 리스너
+        // =========================================================================
+        const containerElem = document.getElementById('canvas-container');
+        let touchStartX = 0, touchStartY = 0;
+        let touchStartTime = 0;
+        let hasTouchMoved = false;
+        let initialPinchDist = null;
+        let isDragging = false;
+        let startX = 0, startY = 0;
+
+        containerElem.addEventListener('mousedown', e => {
+            isDragging = true; startX = e.clientX; startY = e.clientY;
+            touchStartX = e.clientX; touchStartY = e.clientY; touchStartTime = Date.now();
+        });
+        window.addEventListener('mousemove', e => {
+            if (isDragging) {
+                cameraX -= (e.clientX - startX) / scale;
+                cameraY -= (e.clientY - startY) / scale;
+                startX = e.clientX; startY = e.clientY;
+                requestRender();
+            }
+        });
+        window.addEventListener('mouseup', e => {
+            if (isDragging) {
+                isDragging = false;
+                let dist = Math.hypot(e.clientX - touchStartX, e.clientY - touchStartY);
+                if (dist < 8 && Date.now() - touchStartTime < 350) handleScreenClick(e.clientX, e.clientY);
+            }
+        });
+
+        containerElem.addEventListener('touchstart', e => {
+            e.preventDefault();
+            if (e.touches.length === 1) {
+                isDragging = true; hasTouchMoved = false;
+                startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+                touchStartX = startX; touchStartY = startY;
+                touchStartTime = Date.now();
+            } else if (e.touches.length === 2) {
+                isDragging = false; hasTouchMoved = true;
+                initialPinchDist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+            }
+        }, { passive: false });
+
+        containerElem.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if (e.touches.length === 1 && isDragging) {
+                let dx = e.touches[0].clientX - startX;
+                let dy = e.touches[0].clientY - startY;
+                if (Math.hypot(e.touches[0].clientX - touchStartX, e.touches[0].clientY - touchStartY) > 6) {
+                    hasTouchMoved = true;
+                }
+                cameraX -= dx / scale;
+                cameraY -= dy / scale;
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+                requestRender();
+            } else if (e.touches.length === 2 && initialPinchDist) {
+                hasTouchMoved = true;
+                let dist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                let factor = dist / initialPinchDist;
+                scale = Math.min(Math.max(0.4, scale * factor), 2.8);
+                initialPinchDist = dist;
+                requestRender();
+            }
+        }, { passive: false });
+
+        containerElem.addEventListener('touchend', e => {
+            if (isDragging && !hasTouchMoved && (Date.now() - touchStartTime < 350)) {
+                handleScreenClick(touchStartX, touchStartY);
+            }
+            isDragging = false;
+            initialPinchDist = null;
+        }, { passive: false });
+
+        function handleScreenClick(clientX, clientY) {
+            let rect = canvas.getBoundingClientRect();
+            let clickX = (clientX - rect.left) / scale + cameraX;
+            let clickY = (clientY - rect.top) / scale + cameraY;
+
+            let estR = Math.round(clickY / HEX_VERT_SPACING);
+            let estC = Math.round((clickX / HEX_W) - 0.5 * (estR % 2));
+
+            let bestTile = null;
+            let minDist = Infinity;
+
+            for (let dr = -1; dr <= 1; dr++) {
+                for (let dc = -1; dc <= 1; dc++) {
+                    let r = estR + dr, c = estC + dc;
+                    if (r >= 0 && r < MAP_ROWS && c >= 0 && c < MAP_COLS) {
+                        let center = getHexCenter(c, r);
+                        let d = Math.hypot(clickX - center.x, clickY - center.y);
+                        if (d < minDist) { minDist = d; bestTile = map[r][c]; }
+                    }
+                }
+            }
+            if (bestTile && minDist <= HEX_R * 1.05) handleHexClick(bestTile.r, bestTile.c);
+        }
+
+        initLobbyUI();
+    </script>
+</body>
+</html>
